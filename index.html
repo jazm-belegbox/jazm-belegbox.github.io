@@ -49,7 +49,7 @@ body{-webkit-tap-highlight-color:transparent}
 h1,h2,h3{font-weight:800}
 body{background:var(--bg);color:var(--ink);font:16px/1.5 var(--f-body);
   padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));
-  padding-block:0 calc(96px + env(safe-area-inset-bottom,0px))}
+  padding-block:0 calc(160px + env(safe-area-inset-bottom,0px))}
 .app{max-width:720px;margin:0 auto}
 h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.01em}
 button,input,select{font:inherit;color:inherit}
@@ -94,9 +94,14 @@ section.view{display:flex;flex-direction:column;gap:22px;padding-block:14px}
   background:none;border:0;border-top:1px solid var(--line);text-align:left;width:100%}
 .row:first-child{border-top:0}
 .row:hover{background:var(--sunk)}
-.row .t{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .t{font-weight:700;overflow-wrap:anywhere}
 .row .s{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.row{align-items:start}
+.row .main{min-width:0;display:grid;gap:2px}
+.row .pl{margin-top:4px}
+.row .amt{white-space:nowrap;font-size:15px;padding-top:2px;text-align:right}
+.row .amt small{display:block;font-size:11px;color:var(--muted);font-family:var(--f-body)}
+.row .tile,.row .date{align-self:center}
 .tile{width:40px;height:40px;border-radius:10px;background:var(--sunk);display:grid;place-items:center;
   font-family:var(--f-display);font-weight:700;color:var(--accent);overflow:hidden}
 .tile img{width:100%;height:100%;object-fit:cover}
