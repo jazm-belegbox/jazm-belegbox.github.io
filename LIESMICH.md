@@ -1,6 +1,15 @@
-# Belegbox – Test-App 0.1.0.1
+# Belegbox – Test-App 0.4.0.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server und keine Verbindung zu fremden Diensten.
+
+## Gesten & Bewegung (ab 0.4)
+
+- Links/rechts wischen wechselt zwischen Übersicht, Geräte und Verträge.
+- Detail- und Formularfenster lassen sich am Griff oder von oben nach unten wegziehen.
+- Oben auf der Seite nach unten ziehen: Fristen neu berechnen und nach Updates suchen.
+- „Neu“ öffnet einen Fächer: Gerät, Abo / Vertrag oder direkt „Beleg fotografieren“.
+- Tresor-Animation beim Entsperren und Sperren, Garantie-Ringe um die Geräte, hochzählende Beträge, Haken-Animation beim Speichern und Kündigen, leichtes Kippen mit Glanz über den Lagesensor, kurzes Vibrieren bei Aktionen.
+- Wer in Android „Animationen entfernen“ eingeschaltet hat, bekommt die ruhige Version ohne Effekte.
 
 ## Dateien
 

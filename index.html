@@ -177,7 +177,145 @@ body.locked .fab,body.locked nav.tabs,body.locked .app{display:none}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom,0px));z-index:70;
   background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;width:max-content;max-width:calc(100% - 32px)}
 @media (max-width:420px){.facts{grid-template-columns:1fr 1fr}.facts div:last-child{grid-column:1/-1}.bar{grid-template-columns:6.5em 1fr auto}}
-@media (prefers-reduced-motion:no-preference){.sheet{animation:up .22s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
+
+/* ---------- Bewegung & Gesten (0.4) ---------- */
+:root{--ease:cubic-bezier(.2,.85,.25,1);--spring:cubic-bezier(.3,1.35,.5,1);--gold:#C99A06;--shine:rgba(255,255,255,.7)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--gold:#E8C04A;--shine:rgba(255,255,255,.2)}}
+:root[data-theme="dark"]{--gold:#E8C04A;--shine:rgba(255,255,255,.2)}
+html{overscroll-behavior-y:contain}
+.app{touch-action:pan-y pinch-zoom}
+main{will-change:auto}
+
+/* Tippen fühlt sich an */
+.row{transition:transform .16s var(--ease),background-color .16s}
+.row:active{transform:scale(.985);background:var(--sunk)}
+.btn,.chip,.ghost,.x{transition:transform .14s var(--ease),background-color .2s,color .2s}
+.btn:active,.chip:active,.ghost:active,.x:active{transform:scale(.95)}
+
+/* Tab-Leiste mit gleitender Markierung */
+nav.tabs .in{position:relative}
+nav.tabs button{position:relative;z-index:1}
+nav.tabs .ind{position:absolute;left:0;top:6px;width:calc(100% / 3);height:30px;display:flex;justify-content:center;pointer-events:none;
+  transform:translateX(calc(var(--ti,0) * 100%));transition:transform .45s var(--spring)}
+nav.tabs .ind::before{content:"";width:60px;height:100%;border-radius:99px;background:var(--accent-soft)}
+nav.tabs .ind.drag{transition:none}
+nav.tabs button[aria-current="page"] svg{animation:pop .45s var(--spring)}
+@keyframes pop{0%{transform:scale(.6)}}
+
+/* Neu-Knopf als Fächer */
+.fab{z-index:24;gap:0;transition:transform .16s var(--ease),border-radius .3s var(--ease)}
+.fab:active{transform:scale(.94)}
+.fab .plus{transition:transform .4s var(--spring)}
+.fab .lbl{display:inline-block;max-width:4em;margin-left:8px;overflow:hidden;white-space:nowrap;transition:max-width .28s var(--ease),margin .28s var(--ease),opacity .2s}
+.fab.open{border-radius:50%}
+.fab.open .plus{transform:rotate(135deg)}
+.fab.open .lbl{max-width:0;margin-left:0;opacity:0}
+.fan{position:fixed;inset:0;z-index:22}
+.fan .fs{position:absolute;inset:0;background:rgba(5,15,12,.32);opacity:0;transition:opacity .22s}
+.fan.show .fs{opacity:1}
+.fan .fi{position:absolute;right:max(18px, calc(env(safe-area-inset-right,0px) + 18px));bottom:calc(142px + env(safe-area-inset-bottom,0px));
+  display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.fan .fi button{display:flex;align-items:center;gap:10px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:14px;
+  padding:11px 16px;font-weight:700;box-shadow:0 8px 22px rgba(10,40,35,.2);opacity:0;transform:translateY(22px) scale(.6);transform-origin:right bottom;
+  transition:opacity .16s,transform .22s ease-in;transition-delay:calc((2 - var(--n)) * 25ms)}
+.fan.show .fi button{opacity:1;transform:none;transition:opacity .2s,transform .42s var(--spring);transition-delay:calc(var(--n) * 50ms)}
+.fan .fi svg{width:20px;height:20px;color:var(--accent);flex:none}
+body.locked .fan{display:none}
+
+/* Bottom-Sheet: Scrim blendet mit, Fenster lässt sich nach unten ziehen */
+.scrim{background:rgba(5,15,12,calc(.45 * var(--k,1)));transition:background-color .28s;animation:scrimIn .3s ease-out}
+.scrim.swap{animation:none}
+.scrim.drag{transition:none}
+.scrim.closing{pointer-events:none}
+@keyframes scrimIn{from{background-color:rgba(5,15,12,0)}}
+.sheet{overscroll-behavior:contain;touch-action:pan-y}
+.grab{width:44px;height:5px;margin:4px auto 12px;transition:background-color .2s,width .2s var(--ease)}
+.scrim.drag .grab{background:var(--muted);width:56px}
+
+/* Zum Aktualisieren ziehen */
+.ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 8px);z-index:25;width:42px;height:42px;margin-left:-21px;border-radius:50%;
+  background:var(--surface);border:1px solid var(--line);box-shadow:0 6px 16px rgba(10,40,35,.2);display:grid;place-items:center;color:var(--muted);
+  transform:translateY(-70px);opacity:0;pointer-events:none;transition:background-color .15s,color .15s}
+.ptr svg{width:22px;height:22px}
+.ptr.armed{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.ptr.spin svg{animation:spin .75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Garantie-Ringe */
+.tw{position:relative;width:46px;height:46px;display:grid;place-items:center;align-self:center}
+.row .tw .tile,.tw .tile{width:36px;height:36px;border-radius:50%;font-size:15px}
+.ring{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.ring .trk{fill:none;stroke:var(--sunk)}
+.ring .arc{fill:none;stroke-linecap:round}
+.prot{display:flex;align-items:center;gap:14px;margin:0 0 16px;padding:12px 14px;background:var(--sunk);border-radius:14px}
+.prot .rw{position:relative;width:60px;height:60px;flex:none;display:grid;place-items:center;font-size:14px}
+.prot b{display:block}
+.prot .hint{display:block}
+
+/* Tresor auf dem Sperrbildschirm */
+#lock:not(:empty){position:fixed;inset:0;z-index:60;background:var(--bg);overflow-y:auto;
+  padding:env(safe-area-inset-top,0px) max(16px, env(safe-area-inset-right,0px)) env(safe-area-inset-bottom,0px) max(16px, env(safe-area-inset-left,0px))}
+#lock.leaving{pointer-events:none}
+.vault{width:74px;height:74px;border-radius:21px;background:var(--accent);position:relative;perspective:240px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.16)}
+.vault::before{content:"";position:absolute;inset:8px;border-radius:50%;
+  background:radial-gradient(circle at 50% 45%, var(--accent-soft) 0 22%, color-mix(in srgb, var(--accent) 45%, #000) 78%);box-shadow:inset 0 2px 7px rgba(0,0,0,.45)}
+.vault .door{position:absolute;inset:8px;transform-origin:0 50%;transition:transform .5s cubic-bezier(.5,0,.15,1) 0s}
+.vault .door svg{display:block;width:100%;height:100%;overflow:visible}
+.vault .face{fill:color-mix(in srgb, var(--accent) 80%, #fff);stroke:var(--accent-ink);stroke-opacity:.45;stroke-width:1.5}
+.vault .bolt{fill:var(--accent-ink);opacity:.5}
+.vault .wheel{fill:none;stroke:var(--accent-ink);stroke-width:2.6;stroke-linecap:round;transform-box:fill-box;transform-origin:center;
+  transition:transform .45s cubic-bezier(.3,.1,.2,1) .42s}
+.vault .wheel .knob{fill:var(--accent-ink);stroke:none}
+.vault.open .door{transform:rotateY(-112deg);transition-delay:.3s}
+.vault.open .wheel{transform:rotate(270deg);transition-delay:0s}
+.vault.busy .wheel{animation:spin 1.4s cubic-bezier(.5,0,.5,1) infinite}
+.vault.instant .door,.vault.instant .wheel{transition:none}
+.vault.no{animation:shake .42s}
+.field.no input{animation:shake .42s;border-color:var(--crit)}
+@keyframes shake{20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+
+/* Haken-Animation */
+.yay{position:fixed;inset:0;z-index:90;display:grid;place-items:center;pointer-events:none}
+.yay .card{position:relative;background:var(--surface);border-radius:24px;padding:22px 28px 16px;display:grid;justify-items:center;gap:8px;min-width:150px;
+  box-shadow:0 18px 50px rgba(10,40,35,.3);animation:yayIn .45s var(--spring) both,yayOut .28s ease-in 1.2s forwards}
+.yay svg{width:64px;height:64px}
+.yay .yc{fill:none;stroke:var(--ok);stroke-width:3;stroke-dasharray:145;stroke-dashoffset:145;animation:ink .45s ease-out .08s forwards}
+.yay .yk{fill:none;stroke:var(--ok);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:34;stroke-dashoffset:34;animation:ink .28s ease-out .42s forwards}
+.yay b{font-size:15px}
+.yay i{position:absolute;left:50%;top:54px;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--c);opacity:0;animation:spark .65s ease-out .5s}
+@keyframes ink{to{stroke-dashoffset:0}}
+@keyframes spark{0%{opacity:1;transform:rotate(var(--a)) translateY(-30px) scale(1)}100%{opacity:0;transform:rotate(var(--a)) translateY(-64px) scale(.3)}}
+@keyframes yayIn{from{opacity:0;transform:scale(.6)}}
+@keyframes yayOut{to{opacity:0;transform:scale(.92)}}
+
+/* Kippen & Glanz (nur wenn das Handy Lagedaten liefert) */
+.summary{position:relative;overflow:hidden}
+.summary::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;opacity:0;
+  background:radial-gradient(circle at calc(50% - var(--tx,0) * 70%) calc(35% - var(--ty,0) * 70%), var(--shine), transparent 60%)}
+html.tilt .summary::after{opacity:calc(var(--gm,0) * .55)}
+html.tilt .summary,html.tilt .tiltme{transform:perspective(900px) rotateX(calc(var(--ty,0) * -4deg)) rotateY(calc(var(--tx,0) * 4deg))}
+html.tilt .p-ok{background-image:linear-gradient(100deg,transparent 35%,var(--shine) 50%,transparent 65%);background-size:300% 100%;background-repeat:no-repeat;
+  background-position:calc(4% + var(--gm,0) * 46% - var(--tx,0) * 8%) 0}
+
+@media (prefers-reduced-motion:no-preference){
+  .toast{animation:toastIn .38s var(--spring)}
+  .toast.out{animation:toastOut .2s ease-in forwards}
+  .upd{animation:updIn .45s var(--spring)}
+  .view.rise>*{animation:rise .5s var(--ease) backwards;animation-delay:calc(var(--i,0) * 55ms)}
+  .view.rows .list>.row{animation:rise .42s var(--ease) backwards;animation-delay:calc(60ms + var(--j,0) * 35ms)}
+  .view.enter .bar .fill{transform-origin:left;animation:grow .9s var(--ease) backwards;animation-delay:.18s}
+  .enter .ring .arc{animation:draw 1s cubic-bezier(.3,.7,.2,1) backwards;animation-delay:calc(180ms + var(--j,0) * 40ms)}
+}
+@keyframes toastIn{from{opacity:0;transform:translate(-50%,18px) scale(.94)}}
+@keyframes toastOut{to{opacity:0;transform:translate(-50%,10px) scale(.97)}}
+@keyframes updIn{from{opacity:0;transform:translate(-50%,-24px)}}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}}
+@keyframes grow{from{transform:scaleX(0)}}
+@keyframes draw{from{stroke-dashoffset:var(--c)}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:1ms!important;transition-delay:0s!important;animation-duration:1ms!important;animation-delay:0s!important;animation-iteration-count:1!important}
+  html.tilt .summary,html.tilt .tiltme{transform:none}
+}
 </style>
 </head>
 <body>
@@ -200,9 +338,18 @@ body.locked .fab,body.locked nav.tabs,body.locked .app{display:none}
 <div id="toastRoot"></div>
 <div id="updRoot"></div>
 
-<button class="fab" id="fab" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Neu</button>
+<div class="ptr" id="ptr" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/></svg></div>
+
+<div class="fan" id="fan" hidden><div class="fs"></div><div class="fi">
+  <button type="button" data-new="photo" style="--n:2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>Beleg fotografieren</button>
+  <button type="button" data-new="c" style="--n:1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>Abo / Vertrag</button>
+  <button type="button" data-new="d" style="--n:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Gerät</button>
+</div></div>
+
+<button class="fab" id="fab" type="button" aria-expanded="false" aria-controls="fan"><svg class="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Neu</span></button>
 
 <nav class="tabs" aria-label="Bereiche"><div class="in">
+  <span class="ind" aria-hidden="true"></span>
   <button type="button" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Übersicht</button>
   <button type="button" data-tab="geraete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Geräte</button>
   <button type="button" data-tab="vertraege"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg>Verträge</button>
