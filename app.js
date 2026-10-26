@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.2.0.2';
+const APP_VERSION='0.3.0.3';
 const KEY='belegbox-v1';
 const T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -42,45 +42,105 @@ function samples(){
   };
 }
 
-/* Verschlüsselter Tresor: PBKDF2 (SHA-256) leitet aus dem Passwort einen AES-256-GCM-Schlüssel ab.
-   Gespeichert werden nur Salt, IV und Chiffretext. Schlüssel und Klartext existieren nur im Arbeitsspeicher. */
+/* Verschlüsselter Tresor (Format 2)
+   - Ein zufälliger Datenschlüssel (256 Bit) verschlüsselt alle Einträge mit AES-256-GCM.
+   - Der Datenschlüssel liegt nur verpackt im Speicher: einmal mit dem Passwort (PBKDF2, SHA-256),
+     optional zusätzlich mit dem Fingerabdruck (Passkey mit PRF-Erweiterung, HKDF).
+   - Klartext und Schlüssel existieren nur im Arbeitsspeicher, solange die App entsperrt ist. */
 const VKEY='belegbox-vault-v1', ITER=600000, IDLE_MS=5*60e3, BG_MS=60e3;
-let db=null, key=null, curSalt=null, tab='home', filter='alle';
+let db=null, key=null, dekRaw=null, vmeta=null, tab='home', filter='alle';
 const te=new TextEncoder(), td=new TextDecoder();
+const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
 function toB64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
 function fromB64(s){const b=atob(s);const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
 async function deriveKey(pw,salt,iter){
   const base=await crypto.subtle.importKey('raw',te.encode(pw),'PBKDF2',false,['deriveKey']);
   return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:iter,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
 }
+async function bioKek(prfOut,salt){
+  const base=await crypto.subtle.importKey('raw',prfOut,'HKDF',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt,info:te.encode('belegbox-bio-v1')},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+async function seal(k,bytes){const iv=rnd(12);return {iv:toB64(iv),ct:toB64(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,bytes))}}
+async function open_(k,box){return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB64(box.iv)},k,fromB64(box.ct)))}
+const importDek=raw=>crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);
 function readVault(){try{const r=localStorage.getItem(VKEY);return r?JSON.parse(r):null}catch(e){return null}}
 async function persist(){
-  if(!key||!db)return;
-  const iv=crypto.getRandomValues(new Uint8Array(12));
-  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,te.encode(JSON.stringify(db)));
-  localStorage.setItem(VKEY,JSON.stringify({v:1,iter:ITER,salt:toB64(curSalt),iv:toB64(iv),ct:toB64(ct)}));
+  if(!key||!db||!vmeta)return;
+  const box=await seal(key,te.encode(JSON.stringify(db)));
+  localStorage.setItem(VKEY,JSON.stringify(Object.assign({},vmeta,{v:2,iv:box.iv,ct:box.ct})));
 }
 let saving=Promise.resolve();
 function save(){saving=saving.then(persist).catch(()=>toast('Speichern fehlgeschlagen. Der Speicher ist vermutlich voll: Entferne ein paar Fotos.'));return saving}
+async function openWithDek(raw,v){
+  const k=await importDek(raw);
+  const pt=await open_(k,v);
+  db=JSON.parse(td.decode(pt));key=k;dekRaw=raw;
+  vmeta={iter:v.iter,salt:v.salt,wrapPw:v.wrapPw,bio:v.bio||null};
+}
 async function unlock(pw){
   const v=readVault();const salt=fromB64(v.salt);
-  const k=await deriveKey(pw,salt,v.iter||ITER);
-  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB64(v.iv)},k,fromB64(v.ct)); // wirft bei falschem Passwort
-  db=JSON.parse(td.decode(pt));key=k;curSalt=salt;
+  const kek=await deriveKey(pw,salt,v.iter||ITER);
+  if(v.v===2){await openWithDek(await open_(kek,v.wrapPw),v);return} // wirft bei falschem Passwort
+  // Format 1 (bis 0.2.0.2): direkt mit dem Passwortschlüssel verschlüsselt → auf Format 2 umstellen
+  const pt=await open_(kek,v);db=JSON.parse(td.decode(pt));
+  dekRaw=rnd(32);key=await importDek(dekRaw);
+  vmeta={iter:v.iter||ITER,salt:v.salt,wrapPw:await seal(kek,dekRaw),bio:null};
+  await save();
 }
 async function createVault(pw,withEx){
-  curSalt=crypto.getRandomValues(new Uint8Array(16));key=await deriveKey(pw,curSalt,ITER);
+  const salt=rnd(16);const kek=await deriveKey(pw,salt,ITER);
+  dekRaw=rnd(32);key=await importDek(dekRaw);
+  vmeta={iter:ITER,salt:toB64(salt),wrapPw:await seal(kek,dekRaw),bio:null};
   let old=null;try{old=JSON.parse(localStorage.getItem(KEY))}catch(e){}
   db=old&&Array.isArray(old.devices)?old:withEx?samples():{devices:[],contracts:[]};
   await persist();
   try{localStorage.removeItem(KEY)}catch(e){} // alte unverschlüsselte Daten entfernen
 }
 async function changePassword(oldPw,newPw){
-  const v=readVault();const k=await deriveKey(oldPw,fromB64(v.salt),v.iter||ITER);
-  await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB64(v.iv)},k,fromB64(v.ct));
-  curSalt=crypto.getRandomValues(new Uint8Array(16));key=await deriveKey(newPw,curSalt,ITER);await save();
+  const old=await deriveKey(oldPw,fromB64(vmeta.salt),vmeta.iter||ITER);
+  await open_(old,vmeta.wrapPw); // prüft das alte Passwort
+  const salt=rnd(16);const kek=await deriveKey(newPw,salt,ITER);
+  vmeta=Object.assign({},vmeta,{iter:ITER,salt:toB64(salt),wrapPw:await seal(kek,dekRaw)});
+  await save();
 }
-function lock(){saving.then(()=>{key=null;db=null;closeSheet();main.innerHTML='';showLock()})}
+function lock(){saving.then(()=>{key=null;db=null;if(dekRaw)dekRaw.fill(0);dekRaw=null;vmeta=null;closeSheet();main.innerHTML='';showLock()})}
+
+/* Fingerabdruck / Gesichtserkennung über einen Passkey mit PRF-Erweiterung */
+const bioPossible=()=>!!(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
+async function prfFrom(cred){const r=cred.getClientExtensionResults&&cred.getClientExtensionResults();
+  return r&&r.prf&&r.prf.results&&r.prf.results.first?new Uint8Array(r.prf.results.first):null}
+async function bioGet(credId,prfSalt){
+  const cred=await navigator.credentials.get({publicKey:{challenge:rnd(32),rpId:location.hostname,timeout:60000,userVerification:'required',
+    allowCredentials:[{type:'public-key',id:credId}],extensions:{prf:{eval:{first:prfSalt}}}}});
+  return prfFrom(cred);
+}
+async function enableBio(){
+  if(!bioPossible())throw new Error('Dieser Browser unterstützt kein Entsperren per Fingerabdruck.');
+  const prfSalt=rnd(32);
+  const cred=await navigator.credentials.create({publicKey:{
+    rp:{name:'Belegbox',id:location.hostname},user:{id:rnd(16),name:'Belegbox',displayName:'Belegbox'},challenge:rnd(32),
+    pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],timeout:60000,attestation:'none',
+    authenticatorSelection:{authenticatorAttachment:'platform',residentKey:'preferred',userVerification:'required'},
+    extensions:{prf:{eval:{first:prfSalt}}}}});
+  const ext=cred.getClientExtensionResults?cred.getClientExtensionResults():{};
+  if(!ext.prf||ext.prf.enabled===false)throw new Error('Dein Gerät kann den Fingerabdruck nicht zum Verschlüsseln nutzen. Du kannst den angelegten Passkey „Belegbox“ im Passwortmanager wieder löschen.');
+  const credId=new Uint8Array(cred.rawId);
+  let out=await prfFrom(cred);
+  if(!out)out=await bioGet(credId,prfSalt); // manche Geräte liefern den Wert erst beim ersten Entsperren
+  if(!out)throw new Error('Der Fingerabdruck-Schlüssel konnte nicht erzeugt werden. Das Passwort funktioniert weiterhin.');
+  const hk=rnd(16);
+  vmeta=Object.assign({},vmeta,{bio:{credId:toB64(credId),prfSalt:toB64(prfSalt),hkdfSalt:toB64(hk),box:await seal(await bioKek(out,hk),dekRaw)}});
+  out.fill(0);await save();
+}
+function disableBio(){vmeta=Object.assign({},vmeta,{bio:null});return save()}
+async function unlockBio(){
+  const v=readVault();const b=v.bio;
+  const out=await bioGet(fromB64(b.credId),fromB64(b.prfSalt));
+  if(!out)throw new Error('nocred');
+  const raw=await open_(await bioKek(out,fromB64(b.hkdfSalt)),b.box);out.fill(0);
+  await openWithDek(raw,v);
+}
 
 /* Bankdaten gar nicht erst speichern */
 function looksBanky(s){const x=String(s||'').replace(/[\s-]/g,'').toUpperCase();
@@ -91,11 +151,13 @@ const maskVal=s=>{s=String(s||'');return s.length<=4?s:'•••• '+s.slice(-
 
 function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast" role="status">${esc(msg)}</div>`;clearTimeout(toast.t);toast.t=setTimeout(()=>r.innerHTML='',4000)}
 
+const FINGER='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 8.5a6 6 0 0 1 11 3.3c0 1.6-.1 3.2-.4 4.7"/><path d="M4 12.5c0-1 .1-2 .4-2.9"/><path d="M9 21c.8-2.2 1-4.6 1-7a2 2 0 0 1 4 0c0 1 0 2-.1 3"/><path d="M12.5 21.5c.4-.9.7-1.8.9-2.8"/><path d="M6.6 19.4c.7-1.7 1-3.5 1-5.4a4.4 4.4 0 0 1 .7-2.4"/><path d="M16.5 20c.2-.6.3-1.3.4-1.9"/></svg>';
 const SHIELD='<svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 function showLock(){
   document.body.classList.add('locked');
   const L=document.getElementById('lock');
-  const setup=!readVault();
+  const vault=readVault();const setup=!vault;
+  const bio=!setup&&vault.bio&&bioPossible();
   L.innerHTML=`<div class="lock"><form class="lockcard" id="lf" novalidate>
     <div class="shield">${SHIELD}</div>
     ${setup?`<h2>Tresor einrichten</h2>
@@ -104,10 +166,11 @@ function showLock(){
       <label class="field"><span>Passwort wiederholen</span><input id="lp2" type="password" autocomplete="new-password"></label>
       <label class="check"><input id="lex" type="checkbox" checked> Mit Beispieleinträgen starten</label>
       <div class="note">Es gibt keine Wiederherstellung. Wer das Passwort vergisst, verliert die Daten. Notier es dir an einem sicheren Ort, z. B. im Passwortmanager.</div>`
-    :`<h2>Belegbox ist gesperrt</h2><p>Gib dein Passwort ein, um deine Daten zu entschlüsseln.</p>
+    :`<h2>Belegbox ist gesperrt</h2><p>${bio?'Entsperre mit deinem Fingerabdruck oder deinem Passwort.':'Gib dein Passwort ein, um deine Daten zu entschlüsseln.'}</p>
+      ${bio?`<button type="button" class="btn primary bio" id="lbio">${FINGER}Mit Fingerabdruck entsperren</button><div class="or"><span>oder mit Passwort</span></div>`:''}
       <label class="field"><span>Passwort</span><input id="lp1" type="password" autocomplete="current-password"></label>`}
     <p class="hint" id="lerr" style="color:var(--crit)" hidden></p>
-    <button type="submit" class="btn primary" id="lgo">${setup?'Tresor anlegen':'Entsperren'}</button>
+    <button type="submit" class="btn${bio?'':' primary'}" id="lgo">${setup?'Tresor anlegen':'Entsperren'}</button>
     ${setup?'<label class="linkbtn" style="cursor:pointer">Neues Handy? Sicherung wiederherstellen<input id="lrestore" type="file" accept=".belegbox,application/json" hidden></label>'
       :'<button type="button" class="linkbtn" id="lreset">Passwort vergessen? Tresor zurücksetzen</button>'}
     <p class="hint" style="text-align:center">Version ${APP_VERSION}</p>
@@ -123,15 +186,23 @@ function showLock(){
     go.disabled=true;go.textContent=setup?'Wird verschlüsselt …':'Wird entschlüsselt …';
     try{ setup?await createVault(p1,L.querySelector('#lex').checked):await unlock(p1) }
     catch(x){return fail(setup?'Der Tresor konnte nicht angelegt werden. Prüfe, ob der Browser Speicher erlaubt.':'Das Passwort ist falsch.')}
-    L.innerHTML='';document.body.classList.remove('locked');lastAct=Date.now();tab='home';filter='alle';render();askPersist();
+    opened();
   });
+  function opened(){L.innerHTML='';document.body.classList.remove('locked');lastAct=Date.now();tab='home';filter='alle';render();askPersist()}
+  const lb=L.querySelector('#lbio');
+  if(lb)lb.onclick=async()=>{err.hidden=true;lb.disabled=true;
+    try{await unlockBio();opened()}
+    catch(x){lb.disabled=false;
+      if(x&&x.name==='NotAllowedError'){err.textContent='Abgebrochen. Tippe erneut oder nutze dein Passwort.'}
+      else{err.textContent='Entsperren per Fingerabdruck hat nicht geklappt. Bitte nutze dein Passwort.'}
+      err.hidden=false}};
   const rf=L.querySelector('#lrestore');
   if(rf)rf.addEventListener('change',async()=>{const file=rf.files[0];if(!file)return;
     try{restoreVault(await readBackupFile(file))}catch(x){fail(x.message)}});
   const rs=L.querySelector('#lreset');
   if(rs){let armed=false;rs.onclick=()=>{if(!armed){armed=true;rs.classList.add('sure');rs.textContent='Wirklich alles löschen? Nochmal tippen';return}
     try{localStorage.removeItem(VKEY)}catch(e){}showLock()}}
-  const first=L.querySelector('input');if(first)first.focus({preventScroll:true});
+  if(!bio){const first=L.querySelector('input');if(first)first.focus({preventScroll:true})}
 }
 
 /* Dateien weitergeben: Teilen-Menü (z. B. Google Drive), sonst normaler Download */
@@ -455,7 +526,7 @@ function openForm(kind,item){
 function openMenu(){
   openSheet(head('Daten & Sicherheit')+`
     <div class="secline"><svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
-      Verschlüsselt mit AES-256 · sperrt nach 5 Min. ohne Eingabe oder 1 Min. im Hintergrund</div>
+      Verschlüsselt mit AES-256${vmeta&&vmeta.bio?' · Fingerabdruck an':''} · sperrt nach 5 Min. ohne Eingabe oder 1 Min. im Hintergrund</div>
     <p class="hint" style="margin-bottom:14px">Deine Daten liegen nur verschlüsselt in diesem Browser und werden nirgendwohin gesendet. Dein Passwort wird nicht gespeichert.</p>
     <form id="pwf" novalidate style="margin-bottom:18px">
       <div class="label">Passwort ändern</div>
@@ -465,6 +536,10 @@ function openMenu(){
       <p class="hint" id="pwerr" style="color:var(--crit)" hidden></p>
       <div class="actions"><button type="submit" class="btn" id="pwgo">Passwort ändern</button></div>
     </form>
+    ${bioPossible()?`<div class="label" style="margin-bottom:8px">Fingerabdruck</div>
+    <p class="hint" style="margin-bottom:10px">${vmeta&&vmeta.bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die Belegbox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „Belegbox“ in deinem Passwortmanager angelegt.'}</p>
+    <div class="actions" style="margin-bottom:6px"><button type="button" class="btn${vmeta&&vmeta.bio?'':' primary'}" id="bioBtn">${vmeta&&vmeta.bio?'Ausschalten':'Einschalten'}</button></div>
+    <p class="hint" id="bioMsg" hidden></p><div style="height:12px"></div>`:''}
     <div class="label" style="margin-bottom:8px">Kalender</div>
     <p class="hint" style="margin-bottom:10px">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
     <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
@@ -487,6 +562,12 @@ function openMenu(){
        er.hidden=true;go.disabled=true;go.textContent='Wird neu verschlüsselt …';
        try{await changePassword(p0,p1)}catch(x){return fail('Das aktuelle Passwort ist falsch.')}
        closeSheet();toast('Passwort geändert. Deine Daten sind neu verschlüsselt.')});
+     const bb=s.querySelector('#bioBtn');
+     if(bb)bb.onclick=async()=>{const m=s.querySelector('#bioMsg');m.hidden=true;bb.disabled=true;
+       try{ if(vmeta.bio){await disableBio();closeSheet();toast('Fingerabdruck ausgeschaltet. Den Passkey „Belegbox“ kannst du im Passwortmanager löschen.')}
+            else{await enableBio();closeSheet();toast('Fingerabdruck eingeschaltet. Probier es gleich mit „Sperren“ aus.')} }
+       catch(x){bb.disabled=false;m.textContent=x&&x.name==='NotAllowedError'?'Abgebrochen.':(x&&x.name==='InvalidStateError'?'Für dieses Gerät gibt es schon einen Belegbox-Passkey. Lösche ihn im Passwortmanager und versuch es erneut.':(x&&x.message)||'Das hat nicht geklappt.');
+         m.style.color='var(--crit)';m.hidden=false}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
@@ -508,8 +589,9 @@ showLock();
 
 /* Service Worker: offline nutzbar, Hinweis bei neuer Version */
 if('serviceWorker' in navigator){
-  let reloading=false;
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading)return;reloading=true;location.reload()});
+  let reloading=false;const hadController=!!navigator.serviceWorker.controller;
+  // Nur neu laden, wenn eine bestehende Version abgelöst wird – nicht beim allerersten Installieren
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading||!hadController)return;reloading=true;location.reload()});
   navigator.serviceWorker.register('sw.js').then(reg=>{
     const offer=w=>{const r=document.getElementById('updRoot');
       r.innerHTML='<div class="upd" role="status"><span>Neue Version der Belegbox verfügbar</span><button type="button" id="updGo">Aktualisieren</button><button type="button" id="updX" aria-label="Später">✕</button></div>';
