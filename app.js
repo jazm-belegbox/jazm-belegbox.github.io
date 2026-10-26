@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.4.0.0';
+const APP_VERSION='0.4.1.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -148,7 +148,7 @@ async function unlockBio(){
 /* Bankdaten gar nicht erst speichern */
 function looksBanky(s){const x=String(s||'').replace(/[\s-]/g,'').toUpperCase();
   if(/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(x))return true;
-  if(/^\d{13,19}$/.test(x)){let sum=0,alt=false;for(let i=x.length-1;i>=0;i--){let n=+x[i];if(alt){n*=2;if(n>9)n-=9}sum+=n;alt=!alt}return sum%10===0}
+  if(/^[3-6]\d{14,15}$/.test(x)){let sum=0,alt=false;for(let i=x.length-1;i>=0;i--){let n=+x[i];if(alt){n*=2;if(n>9)n-=9}sum+=n;alt=!alt}return sum%10===0}
   return false}
 const maskVal=s=>{s=String(s||'');return s.length<=4?s:'•••• '+s.slice(-4)};
 
@@ -330,10 +330,10 @@ function contractInfo(c){
   for(let k=0;k<600;k++){
     const end=addMonths(start,Number(c.laufzeit||1)+k*Number(c.verl||1));
     const by=addDays(end,-Number(c.frist||0));
-    if(c.status==='gekuendigt'){ if(days(end)>=0||k>500) return {end,by:null}; continue }
-    if(days(by)>=0) return {end,by};
+    if(c.status==='gekuendigt'){ if(days(end)>=0||k>500) return {end,by:null,k}; continue }
+    if(days(by)>=0) return {end,by,k};
   }
-  return {end:start,by:null};
+  return {end:start,by:null,k:0};
 }
 function monthly(c){return Number(c.kosten||0)/Number(c.intervall||1)}
 function deviceInfo(d){
@@ -554,15 +554,21 @@ function openDetail(kind,id,from){
         <dt>Beginn</dt><dd>${fmtD(parse(c.beginn))}</dd>
         <dt>Mindestlaufzeit</dt><dd>${c.laufzeit} Monat${c.laufzeit>1?'e':''}, danach je ${c.verl==12?'12 Monate':c.verl+' Monat'+(c.verl>1?'e':'')}</dd>
         <dt>Kündigungsfrist</dt><dd>${Number(c.frist)?c.frist+' Tage':'jederzeit'}</dd>
-        <dt>${c.status==='gekuendigt'?'Endet am':'Nächstes Laufzeitende'}</dt><dd>${fmtD(i.end)}</dd>
+        <dt>${c.status==='gekuendigt'?'Endet am':'Nächstes Laufzeitende'}</dt><dd>${fmtD(i.end)}${c.status!=='gekuendigt'&&i.k>0?` <span class="pill p-none">schon ${i.k}× verlängert</span>`:''}</dd>
         ${i.by?`<dt>Spätestens kündigen</dt><dd><b>${fmtD(i.by)}</b> (${inDays(days(i.by))})</dd>`:''}
-        <dt>Kundennummer</dt><dd class="num">${c.kundennr?`<span id="kd">${esc(maskVal(c.kundennr))}</span><button type="button" class="reveal" id="kdBtn">Anzeigen</button>`:'–'}</dd>
+        ${[['kundennr','Kundennummer'],['vertragsnr','Vertragsnummer']].map(([f,l])=>`<dt>${l}</dt><dd class="num">${c[f]?`<span data-mask="${f}">${esc(maskVal(c[f]))}</span><button type="button" class="reveal" data-show="${f}">Anzeigen</button><button type="button" class="reveal" data-copy="${f}">Kopieren</button>`:'–'}</dd>`).join('')}
       </dl>
       <div class="actions">
         <button type="button" class="btn primary" id="edit">Bearbeiten</button>
         ${c.status!=='gekuendigt'?'<button type="button" class="btn" id="cancel">Als gekündigt markieren</button>':'<button type="button" class="btn" id="cancel">Wieder aktiv</button>'}
+        <button type="button" class="btn" id="dup">Kopie anlegen</button>
         <button type="button" class="btn danger" id="del">Löschen</button></div>`,
-      s=>{const kb=s.querySelector('#kdBtn');if(kb){let open=false;kb.onclick=()=>{open=!open;s.querySelector('#kd').textContent=open?c.kundennr:maskVal(c.kundennr);kb.textContent=open?'Verbergen':'Anzeigen'}}
+      s=>{s.querySelectorAll('[data-show]').forEach(b=>{const f=b.dataset.show,sp=s.querySelector(`[data-mask="${f}"]`);let open=false;
+            b.onclick=()=>{open=!open;sp.textContent=open?c[f]:maskVal(c[f]);b.textContent=open?'Verbergen':'Anzeigen'}});
+          s.querySelectorAll('[data-copy]').forEach(b=>b.onclick=async()=>{const f=b.dataset.copy;
+            try{await navigator.clipboard.writeText(c[f]);buzz(8);toast((f==='kundennr'?'Kundennummer':'Vertragsnummer')+' kopiert.')}
+            catch(x){toast('Kopieren hat nicht geklappt. Tippe auf „Anzeigen“ und markiere die Nummer.')}});
+          s.querySelector('#dup').onclick=()=>openForm('c',null,false,c);
           s.querySelector('#edit').onclick=()=>openForm('c',c);
           s.querySelector('#cancel').onclick=()=>{const was=c.status==='gekuendigt';c.status=was?'aktiv':'gekuendigt';save();render();openDetail('c',id);
             if(was){buzz(8);toast('Wieder als aktiv markiert.')}
@@ -579,7 +585,7 @@ function shrink(file){return new Promise((res,rej)=>{const r=new FileReader();r.
     cv.width=Math.round(img.width*k);cv.height=Math.round(img.height*k);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);res(cv.toDataURL('image/jpeg',.72))};
   img.onerror=rej;img.src=r.result};r.onerror=rej;r.readAsDataURL(file)})}
 
-function openForm(kind,item,camera){
+function openForm(kind,item,camera,tpl){
   kind=kind||(tab==='vertraege'?'c':'d');
   const opt=(arr,sel)=>arr.map(v=>`<option${v===sel?' selected':''}>${v}</option>`).join('');
   const dev=`
@@ -600,31 +606,38 @@ function openForm(kind,item,camera){
     <p class="hint">Bei Kontoauszügen vorher alles außer der Buchung schwärzen. Die gesetzliche Gewährleistung von 2 Jahren ab Kauf wird automatisch berechnet.</p>`;
   const con=`
     <label class="field"><span>Anbieter *</span><input id="c_anb" required placeholder="z. B. Spotify"></label>
-    <div class="grid2"><label class="field"><span>Kategorie</span><select id="c_kat">${opt(CON_KAT,'Streaming')}</select></label>
-      <label class="field"><span>Kundennummer</span><input id="c_kd"></label></div>
+    <label class="field"><span>Kategorie</span><select id="c_kat">${opt(CON_KAT,'Streaming')}</select></label>
+    <div class="grid2"><label class="field"><span>Kundennummer</span><input id="c_kd" autocomplete="off"></label>
+      <label class="field"><span>Vertragsnummer</span><input id="c_vnr" autocomplete="off"></label></div>
     <div class="grid2"><label class="field"><span>Kosten (€) *</span><input id="c_kost" type="number" step="0.01" min="0" required inputmode="decimal"></label>
       <label class="field"><span>Zahlweise</span><select id="c_int"><option value="1">monatlich</option><option value="3">vierteljährlich</option><option value="12">jährlich</option></select></label></div>
     <div class="grid2"><label class="field"><span>Vertragsbeginn *</span><input id="c_beg" type="date" required value="${iso(T0)}"></label>
       <label class="field"><span>Mindestlaufzeit</span><select id="c_lz"><option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12" selected>12 Monate</option><option value="24">24 Monate</option><option value="36">36 Monate</option></select></label></div>
-    <div class="grid2"><label class="field"><span>Verlängert sich um</span><select id="c_verl"><option value="1">1 Monat</option><option value="12">12 Monate</option></select></label>
+    <div class="grid2"><label class="field"><span>Verlängert sich um</span><select id="c_verl"><option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option><option value="24">24 Monate</option></select></label>
       <label class="field"><span>Kündigungsfrist</span><select id="c_fr"><option value="0">jederzeit</option><option value="7">7 Tage</option><option value="14">14 Tage</option><option value="30" selected>1 Monat</option><option value="60">2 Monate</option><option value="90">3 Monate</option></select></label></div>
-    <p class="hint">Aus Beginn, Laufzeit und Frist berechnet die App, bis wann du spätestens kündigen musst.</p>`;
-  openSheet(head(item?'Bearbeiten':'Neuer Eintrag')+`<form id="frm" novalidate>
-    <div class="seg"${item?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
+    <p class="hint">Trag immer den <b>ursprünglichen</b> Vertragsbeginn ein, auch wenn der Vertrag schon verlängert wurde. Die App rechnet die Verlängerungen selbst weiter.</p>
+    <div class="prev" id="c_prev" aria-live="polite"></div>
+    <div class="note" id="c_law" hidden>Verträge, die ab dem 1. März 2022 geschlossen wurden, verlängern sich nach der Mindestlaufzeit meist nur noch auf unbestimmte Zeit und sind dann monatlich kündbar (1 Monat Frist). Prüf kurz deine Unterlagen.
+      <button type="button" class="linkbtn" id="c_lawGo" style="display:block;padding-top:6px;color:var(--warn)">Monatlich kündbar übernehmen</button></div>`;
+  openSheet(head(item?'Bearbeiten':tpl?'Vertrag kopieren':'Neuer Eintrag')+`<form id="frm" novalidate>
+    ${tpl?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
+    <div class="seg"${item||tpl?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
     ${kind==='d'?dev:con}<p class="hint" id="err" style="color:var(--crit)" hidden></p>
     <div class="actions"><button type="submit" class="btn primary">Speichern</button><button type="button" class="btn" data-close>Abbrechen</button></div></form>`,
   s=>{
     s.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>openForm(b.dataset.k));
     const v=id=>s.querySelector('#'+id).value.trim();
-    if(item){ // Felder vorbelegen; fehlende Auswahlwerte ergänzen
+    const src=item||tpl;
+    if(src){ // Felder vorbelegen; fehlende Auswahlwerte ergänzen
       const set=(id,val)=>{const el=s.querySelector('#'+id);if(!el||val==null)return;
         if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===String(val))){const o=document.createElement('option');o.value=String(val);o.textContent=String(val);el.appendChild(o)}
         el.value=String(val)};
-      if(kind==='d'){set('f_name',item.name);set('f_kat',item.kategorie);set('f_raum',item.raum);set('f_her',item.hersteller);set('f_mod',item.modell);
-        set('f_sn',item.sn);set('f_kauf',item.kauf);set('f_preis',item.preis||'');set('f_hae',item.haendler);set('f_gar',item.garantieMonate||0);set('f_nach',item.nachweis);
-        s.querySelector('#f_ges').checked=!!item.geschaetzt}
-      else{set('c_anb',item.anbieter);set('c_kat',item.kategorie);set('c_kd',item.kundennr);set('c_kost',item.kosten);set('c_int',item.intervall);
-        set('c_beg',item.beginn);set('c_lz',item.laufzeit);set('c_verl',item.verl);set('c_fr',item.frist)}
+      if(kind==='d'){set('f_name',src.name);set('f_kat',src.kategorie);set('f_raum',src.raum);set('f_her',src.hersteller);set('f_mod',src.modell);
+        set('f_sn',src.sn);set('f_kauf',src.kauf);set('f_preis',src.preis||'');set('f_hae',src.haendler);set('f_gar',src.garantieMonate||0);set('f_nach',src.nachweis);
+        s.querySelector('#f_ges').checked=!!src.geschaetzt}
+      else{set('c_anb',src.anbieter);set('c_kat',src.kategorie);set('c_kd',src.kundennr);set('c_kost',src.kosten);set('c_int',src.intervall);
+        set('c_lz',src.laufzeit);set('c_verl',src.verl);set('c_fr',src.frist);
+        if(item){set('c_beg',item.beginn);set('c_vnr',item.vertragsnr||'')}}
     }
     s.querySelector('#frm').addEventListener('submit',async e=>{e.preventDefault();const err=s.querySelector('#err');let first=false;
       if([...s.querySelectorAll('input:not([type])')].some(i=>looksBanky(i.value))){
@@ -641,7 +654,7 @@ function openForm(kind,item,camera){
         tab='geraete';
       } else {
         if(!v('c_anb')||!v('c_kost')||!v('c_beg')){err.textContent='Bitte Anbieter, Kosten und Vertragsbeginn ausfüllen.';err.hidden=false;return}
-        const cc={anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),kosten:parseFloat(v('c_kost'))||0,
+        const cc={anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,
           intervall:Number(v('c_int')),beginn:v('c_beg'),laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr'))};
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
@@ -650,6 +663,19 @@ function openForm(kind,item,camera){
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
+    if(kind==='c'){ // Vorschau: was die App aus den Angaben ausrechnet
+      const pv=s.querySelector('#c_prev'),law=s.querySelector('#c_law');
+      const upd=()=>{const beg=v('c_beg');if(!beg){pv.innerHTML='';law.hidden=true;return}
+        const t={beginn:beg,laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),status:'aktiv'};
+        const i=contractInfo(t);
+        pv.innerHTML=`<div class="label">So rechnet die App</div>
+          <div>Nächstes Laufzeitende <b>${fmtD(i.end)}</b>${i.k>0?` · schon <b>${i.k}×</b> verlängert`:''}</div>
+          <div>Spätestens kündigen <b>${i.by?fmtD(i.by):'–'}</b>${i.by?` (${inDays(days(i.by))})`:''}</div>`;
+        law.hidden=!(beg>='2022-03-01'&&t.verl>1)};
+      s.querySelector('#frm').addEventListener('input',upd);s.querySelector('#frm').addEventListener('change',upd);
+      s.querySelector('#c_lawGo').onclick=()=>{s.querySelector('#c_verl').value='1';s.querySelector('#c_fr').value='30';buzz(6);upd()};
+      upd();
+    }
     if(camera&&kind==='d'){ // „Beleg fotografieren“: Kamera direkt öffnen
       const fi=s.querySelector('#f_foto');fi.setAttribute('capture','environment');s.querySelector('#f_nach').value='beleg';fi.click();
     }else{const first=s.querySelector('input');if(first)first.focus({preventScroll:true})}
