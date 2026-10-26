@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.3.0.3';
+const APP_VERSION='0.3.1.4';
 const KEY='belegbox-v1';
 const T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -124,11 +124,14 @@ async function enableBio(){
     authenticatorSelection:{authenticatorAttachment:'platform',residentKey:'preferred',userVerification:'required'},
     extensions:{prf:{eval:{first:prfSalt}}}}});
   const ext=cred.getClientExtensionResults?cred.getClientExtensionResults():{};
-  if(!ext.prf||ext.prf.enabled===false)throw new Error('Dein Gerät kann den Fingerabdruck nicht zum Verschlüsseln nutzen. Du kannst den angelegten Passkey „Belegbox“ im Passwortmanager wieder löschen.');
+  const NOPRF='Dein Passwortmanager unterstützt das Entsperren per Fingerabdruck nicht (häufig bei Samsung Pass). Stell als Passkey-Anbieter den Google Passwortmanager ein und versuch es erneut. Den eben angelegten Passkey „Belegbox“ kannst du löschen.';
+  if(ext.prf&&ext.prf.enabled===false)throw new Error(NOPRF);
   const credId=new Uint8Array(cred.rawId);
   let out=await prfFrom(cred);
-  if(!out)out=await bioGet(credId,prfSalt); // manche Geräte liefern den Wert erst beim ersten Entsperren
-  if(!out)throw new Error('Der Fingerabdruck-Schlüssel konnte nicht erzeugt werden. Das Passwort funktioniert weiterhin.');
+  if(!out){ // manche Anbieter melden die Unterstützung erst beim ersten Entsperren
+    try{out=await bioGet(credId,prfSalt)}catch(x){if(x&&x.name==='NotAllowedError')throw x}
+  }
+  if(!out)throw new Error(NOPRF);
   const hk=rnd(16);
   vmeta=Object.assign({},vmeta,{bio:{credId:toB64(credId),prfSalt:toB64(prfSalt),hkdfSalt:toB64(hk),box:await seal(await bioKek(out,hk),dekRaw)}});
   out.fill(0);await save();
