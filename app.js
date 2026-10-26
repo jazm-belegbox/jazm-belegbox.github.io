@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.4.3.0';
+const APP_VERSION='0.4.4.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -386,6 +386,7 @@ function upcoming(){
 
 /* Render */
 const main=document.getElementById('main');
+function conTile(c){return c.logo?`<div class="tile logo"><img src="${c.logo}" alt=""></div>`:`<div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>`}
 function tileFor(d){return d.foto?`<div class="tile"><img src="${d.foto}" alt=""></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
 function render(mode){
   if(!db)return;
@@ -472,7 +473,7 @@ function viewContracts(){
     <div class="sechead"><h2>Abos & Verträge</h2><span class="label num">${list.length} von ${db.contracts.length}</span></div>
     <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
     <div class="list">${list.length?list.map(c=>`<button type="button" class="row" data-kind="c" data-open="${c.id}">
-      <div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>
+      ${conTile(c)}
       <div class="main"><div class="t">${esc(c.anbieter)}</div><div class="s">${esc(c.kategorie)} · ${eur(price(c))} ${INTERVALL[c.intervall]||''}</div><div class="pl">${conPill(c)}</div></div>
       <span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')
       :`<div class="empty">Noch keine Verträge. Tippe auf „Neu“ und trage Kosten, Laufzeit und Kündigungsfrist ein.</div>`}</div>
@@ -564,7 +565,7 @@ function openDetail(kind,id,from){
           s.querySelector('#edit').onclick=()=>openForm('d',d);armDelete(s,()=>{db.devices=db.devices.filter(x=>x.id!==id)})},from);
   } else {
     const c=db.contracts.find(x=>x.id===id); if(!c)return; const i=contractInfo(c);
-    openSheet(head(esc(c.anbieter))+`<div style="margin:-6px 0 14px">${conPill(c)}</div>
+    openSheet(head((c.logo?`<img class="hlogo" src="${c.logo}" alt="">`:'')+esc(c.anbieter))+`<div style="margin:-6px 0 14px">${conPill(c)}</div>
       <dl class="kv">
         <dt>Kategorie</dt><dd>${esc(c.kategorie)}</dd>
         <dt>Kosten</dt><dd>${eur(price(c))} ${INTERVALL[c.intervall]||''} · <span class="num">${eur(monthly(c))}</span>/Monat</dd>
@@ -599,12 +600,19 @@ function armDelete(s,fn){const b=s.querySelector('#del');let armed=false;
   b.onclick=()=>{if(!armed){armed=true;buzz(10);b.classList.add('sure');b.textContent='Wirklich löschen?';setTimeout(()=>{if(b.isConnected){armed=false;b.classList.remove('sure');b.textContent='Löschen'}},4000);return}
     buzz([10,40,30]);fn();save();closeSheet();render('rows')}}
 
+/* Logo: quadratisch, max. 160 px, Transparenz bleibt erhalten */
+function shrinkLogo(file){return new Promise((res,rej)=>{if(file.size>8e6)return rej(new Error('big'));const r=new FileReader();r.onload=()=>{const img=new Image();
+  img.onload=()=>{const S=160,w=img.naturalWidth||S,h=img.naturalHeight||S,k=Math.min(S/w,S/h,1)||1;const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(w*k));cv.height=Math.max(1,Math.round(h*k));cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+    let out=cv.toDataURL('image/webp',.85);if(!out.startsWith('data:image/webp'))out=cv.toDataURL('image/png');res(out)};
+  img.onerror=rej;img.src=r.result};r.onerror=rej;r.readAsDataURL(file)})}
 function shrink(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const img=new Image();
   img.onload=()=>{const k=Math.min(1,520/Math.max(img.width,img.height));const cv=document.createElement('canvas');
     cv.width=Math.round(img.width*k);cv.height=Math.round(img.height*k);cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);res(cv.toDataURL('image/jpeg',.72))};
   img.onerror=rej;img.src=r.result};r.onerror=rej;r.readAsDataURL(file)})}
 
 function openForm(kind,item,camera,tpl){
+  const src0=item||tpl;
   kind=kind||(tab==='vertraege'?'c':'d');
   const opt=(arr,sel)=>arr.map(v=>`<option${v===sel?' selected':''}>${v}</option>`).join('');
   const dev=`
@@ -625,6 +633,10 @@ function openForm(kind,item,camera,tpl){
     <p class="hint">Bei Kontoauszügen vorher alles außer der Buchung schwärzen. Die gesetzliche Gewährleistung von 2 Jahren ab Kauf wird automatisch berechnet.</p>`;
   const con=`
     <label class="field"><span>Anbieter *</span><input id="c_anb" required placeholder="z. B. Spotify"></label>
+    <div class="logofield"><div class="tile logo" id="c_logoPrev"${src0&&src0.logo?'':' hidden'}>${src0&&src0.logo?`<img src="${src0.logo}" alt="">`:''}</div>
+      <label class="field" style="flex:1"><span>Logo (optional)</span><input id="c_logo" type="file" accept="image/*"></label>
+      <button type="button" class="reveal" id="c_logoDel"${src0&&src0.logo?'':' hidden'}>Entfernen</button></div>
+    <p class="hint">Tipp: Logo auf der Anbieter-Webseite per langem Druck speichern oder einen Screenshot zuschneiden.</p>
     <label class="field"><span>Kategorie</span><select id="c_kat">${opt(CON_KAT,'Streaming')}</select></label>
     <div class="grid2"><label class="field"><span>Kundennummer</span><input id="c_kd" autocomplete="off"></label>
       <label class="field"><span>Vertragsnummer</span><input id="c_vnr" autocomplete="off"></label></div>
@@ -647,6 +659,7 @@ function openForm(kind,item,camera,tpl){
     ${kind==='d'?dev:con}<p class="hint" id="err" style="color:var(--crit)" hidden></p>
     <div class="actions"><button type="submit" class="btn primary">Speichern</button><button type="button" class="btn" data-close>Abbrechen</button></div></form>`,
   s=>{
+    let logoVal=src0&&src0.logo?src0.logo:undefined;
     s.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>openForm(b.dataset.k));
     const v=id=>s.querySelector('#'+id).value.trim();
     const src=item||tpl;
@@ -679,7 +692,10 @@ function openForm(kind,item,camera,tpl){
         if(!v('c_anb')||!v('c_kost')){err.textContent='Bitte Anbieter und Kosten ausfüllen.';err.hidden=false;return}
         if(md==='beginn'&&!v('c_beg')){err.textContent='Bitte den Vertragsbeginn ausfüllen.';err.hidden=false;return}
         if(md==='ende'&&!v('c_end')){err.textContent='Bitte das aktuelle Laufzeitende ausfüllen.';err.hidden=false;return}
-        const cc={anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')===''?null:(parseFloat(v('c_kn'))||0),
+        let logo=logoVal;
+        if(logo===undefined){ // gleicher Anbieter hat schon ein Logo? Dann übernehmen
+          const twin=db.contracts.find(x=>x!==item&&x.logo&&x.anbieter.trim().toLowerCase()===v('c_anb').toLowerCase());logo=twin?twin.logo:''}
+        const cc={logo,anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')===''?null:(parseFloat(v('c_kn'))||0),
           intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr'))};
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
@@ -688,6 +704,13 @@ function openForm(kind,item,camera,tpl){
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
+    if(kind==='c'){ // Logo wählen, Vorschau sofort zeigen
+      const li=s.querySelector('#c_logo'),lp=s.querySelector('#c_logoPrev'),ld=s.querySelector('#c_logoDel');
+      li.addEventListener('change',async()=>{const f=li.files[0];if(!f)return;
+        try{logoVal=await shrinkLogo(f);lp.innerHTML=`<img src="${logoVal}" alt="">`;lp.hidden=false;ld.hidden=false;buzz(6)}
+        catch(x){toast('Das Bild konnte nicht gelesen werden. Versuch es mit PNG, JPG oder SVG.')}li.value=''});
+      ld.onclick=()=>{logoVal='';lp.hidden=true;lp.innerHTML='';ld.hidden=true;buzz(6)};
+    }
     if(kind==='c'){ // Vorschau: was die App aus den Angaben ausrechnet
       const pv=s.querySelector('#c_prev'),law=s.querySelector('#c_law');
       const upd=()=>{const md=v('c_mod'),beg=v('c_beg');

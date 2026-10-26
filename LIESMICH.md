@@ -1,4 +1,4 @@
-# Belegbox – Test-App 0.4.3.0
+# Belegbox – Test-App 0.4.4.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server und keine Verbindung zu fremden Diensten.
 
