@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.4.2.0';
+const APP_VERSION='0.4.3.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -325,19 +325,29 @@ setInterval(()=>{if(key&&Date.now()-lastAct>IDLE_MS)lock()},10000);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)hiddenAt=Date.now();else if(key&&hiddenAt&&Date.now()-hiddenAt>BG_MS)lock()});
 
 /* Berechnungen */
+/* Laufzeit-Modus: 'beginn' = aus Vertragsbeginn + Mindestlaufzeit, 'ende' = bekanntes Laufzeitende, 'offen' = unbefristet */
+const FRIST=n=>{n=Number(n||0);return !n?'ohne Frist':n%30===0?(n/30)+' Monat'+(n>30?'e':'')+' Frist':n+' Tage Frist'};
+const PER=n=>n==12?'12 Monate':n+' Monat'+(n>1?'e':'');
 function contractInfo(c){
-  const start=parse(c.beginn);
+  const m=c.modus||'beginn',fr=Number(c.frist||0);
+  if(m==='offen'){ // jederzeit kündbar: endet frühestens nach Ablauf der Frist
+    const from=c.status==='gekuendigt'&&c.gekuendigtAm?parse(c.gekuendigtAm):T0;
+    return {end:addDays(from,fr),by:null,k:0,offen:true};
+  }
+  const anchor=m==='ende'&&c.ende?parse(c.ende):null,start=anchor?null:parse(c.beginn);
   for(let k=0;k<600;k++){
-    const end=addMonths(start,Number(c.laufzeit||1)+k*Number(c.verl||1));
-    const by=addDays(end,-Number(c.frist||0));
+    const end=anchor?addMonths(anchor,k*Number(c.verl||1)):addMonths(start,Number(c.laufzeit||1)+k*Number(c.verl||1));
+    const by=addDays(end,-fr);
     if(c.status==='gekuendigt'){ if(days(end)>=0||k>500) return {end,by:null,k}; continue }
     if(days(by)>=0) return {end,by,k};
   }
-  return {end:start,by:null,k:0};
+  return {end:anchor||start,by:null,k:0};
 }
 /* Optionaler anderer Preis nach der Mindestlaufzeit */
 function priceChange(c){if(c.kostenNach==null||c.kostenNach==='')return null;const n=Number(c.kostenNach);
-  if(!(n>=0)||n===Number(c.kosten||0))return null;return {date:addMonths(parse(c.beginn),Number(c.laufzeit||1)),preis:n}}
+  if(!(n>=0)||n===Number(c.kosten||0))return null;const m=c.modus||'beginn';
+  const date=m==='offen'?null:m==='ende'?(c.ende?parse(c.ende):null):(c.beginn?addMonths(parse(c.beginn),Number(c.laufzeit||1)):null);
+  return date?{date,preis:n}:null}
 function price(c){const p=priceChange(c);return p&&days(p.date)<=0?p.preis:Number(c.kosten||0)}
 function monthly(c){return price(c)/Number(c.intervall||1)}
 function deviceInfo(d){
@@ -357,13 +367,14 @@ function devPill(d){
 function conPill(c){
   const i=contractInfo(c);
   if(c.status==='gekuendigt') return `<span class="pill p-none">Gekündigt · endet ${fmtD(i.end)}</span>`;
+  if(i.offen) return `<span class="pill p-ok">Jederzeit kündbar · ${FRIST(c.frist)}</span>`;
   const n=days(i.by);
   const cls=n<=14?'p-crit':n<=45?'p-warn':'p-ok';
   return `<span class="pill ${cls}">Kündigen bis ${fmtD(i.by)}</span>`;
 }
 function upcoming(){
   const ev=[];
-  db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const i=contractInfo(c);const n=days(i.by);
+  db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const i=contractInfo(c);if(!i.by)return;const n=days(i.by);
     if(n<=60) ev.push({date:i.by,n,title:c.anbieter,sub:`Kündigungsfrist · sonst Verlängerung um ${c.verl==12?'1 Jahr':c.verl+' Monat'+(c.verl>1?'e':'')}`,kind:'c',id:c.id})});
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['Gewährleistung',i.gew],['Herstellergarantie',i.gar]].forEach(([t,dt])=>{if(!dt)return;const n=days(dt);
@@ -559,10 +570,10 @@ function openDetail(kind,id,from){
         <dt>Kosten</dt><dd>${eur(price(c))} ${INTERVALL[c.intervall]||''} · <span class="num">${eur(monthly(c))}</span>/Monat</dd>
         ${(()=>{const p=priceChange(c);if(!p)return '';const past=days(p.date)<=0;
           return `<dt>Preisänderung</dt><dd>${past?`seit ${fmtD(p.date)} ${eur(p.preis)} (vorher ${eur(c.kosten)})`:`ab ${fmtD(p.date)} ${eur(p.preis)} statt ${eur(c.kosten)} <span class="pill ${p.preis>c.kosten?'p-warn':'p-ok'}">${p.preis>c.kosten?'teurer':'günstiger'}</span>`}</dd>`})()}
-        <dt>Beginn</dt><dd>${fmtD(parse(c.beginn))}</dd>
-        <dt>Mindestlaufzeit</dt><dd>${c.laufzeit} Monat${c.laufzeit>1?'e':''}, danach je ${c.verl==12?'12 Monate':c.verl+' Monat'+(c.verl>1?'e':'')}</dd>
+        ${c.beginn?`<dt>Beginn</dt><dd>${fmtD(parse(c.beginn))}</dd>`:''}
+        <dt>Laufzeit</dt><dd>${i.offen?'Unbefristet, jederzeit kündbar':(c.modus==='ende'?`Laufzeitende ${fmtD(parse(c.ende))} eingetragen`:`Mindestens ${PER(c.laufzeit)}`)+`, danach je ${PER(c.verl)}`}</dd>
         <dt>Kündigungsfrist</dt><dd>${Number(c.frist)?c.frist+' Tage':'jederzeit'}</dd>
-        <dt>${c.status==='gekuendigt'?'Endet am':'Nächstes Laufzeitende'}</dt><dd>${fmtD(i.end)}${c.status!=='gekuendigt'&&i.k>0?` <span class="pill p-none">schon ${i.k}× verlängert</span>`:''}</dd>
+        <dt>${c.status==='gekuendigt'?'Endet am':i.offen?'Bei Kündigung heute endet er am':'Nächstes Laufzeitende'}</dt><dd>${fmtD(i.end)}${c.status!=='gekuendigt'&&i.k>0?` <span class="pill p-none">schon ${i.k}× verlängert</span>`:''}</dd>
         ${i.by?`<dt>Spätestens kündigen</dt><dd><b>${fmtD(i.by)}</b> (${inDays(days(i.by))})</dd>`:''}
         ${[['kundennr','Kundennummer'],['vertragsnr','Vertragsnummer']].map(([f,l])=>`<dt>${l}</dt><dd class="num">${c[f]?`<span data-mask="${f}">${esc(maskVal(c[f]))}</span><button type="button" class="reveal" data-show="${f}">Anzeigen</button><button type="button" class="reveal" data-copy="${f}">Kopieren</button>`:'–'}</dd>`).join('')}
       </dl>
@@ -578,7 +589,7 @@ function openDetail(kind,id,from){
             catch(x){toast('Kopieren hat nicht geklappt. Tippe auf „Anzeigen“ und markiere die Nummer.')}});
           s.querySelector('#dup').onclick=()=>openForm('c',null,false,c);
           s.querySelector('#edit').onclick=()=>openForm('c',c);
-          s.querySelector('#cancel').onclick=()=>{const was=c.status==='gekuendigt';c.status=was?'aktiv':'gekuendigt';save();render();openDetail('c',id);
+          s.querySelector('#cancel').onclick=()=>{const was=c.status==='gekuendigt';c.status=was?'aktiv':'gekuendigt';if(was)delete c.gekuendigtAm;else c.gekuendigtAm=iso(T0);save();render();openDetail('c',id);
             if(was){buzz(8);toast('Wieder als aktiv markiert.')}
             else{celebrate('Gekündigt');toast(`Stark! Ab dem ${fmtD(contractInfo(c).end)} sparst du ${eur(monthly(c)*12)} im Jahr.`)}};
           armDelete(s,()=>{db.contracts=db.contracts.filter(x=>x.id!==id)})},from);
@@ -619,15 +630,17 @@ function openForm(kind,item,camera,tpl){
       <label class="field"><span>Vertragsnummer</span><input id="c_vnr" autocomplete="off"></label></div>
     <div class="grid2"><label class="field"><span>Kosten (€) *</span><input id="c_kost" type="number" step="0.01" min="0" required inputmode="decimal"></label>
       <label class="field"><span>Zahlweise</span><select id="c_int"><option value="1">monatlich</option><option value="3">vierteljährlich</option><option value="12">jährlich</option></select></label></div>
-    <label class="field"><span>Anderer Preis nach der Mindestlaufzeit (€, optional)</span><input id="c_kn" type="number" step="0.01" min="0" inputmode="decimal" placeholder="leer lassen, wenn der Preis gleich bleibt"></label>
-    <div class="grid2"><label class="field"><span>Vertragsbeginn *</span><input id="c_beg" type="date" required value="${iso(T0)}"></label>
+    <label class="field" data-m="beginn ende"><span id="c_knL">Anderer Preis nach der Mindestlaufzeit (€, optional)</span><input id="c_kn" type="number" step="0.01" min="0" inputmode="decimal" placeholder="leer lassen, wenn der Preis gleich bleibt"></label>
+    <label class="field"><span>Laufzeit</span><select id="c_mod"><option value="beginn">Aus dem Vertragsbeginn berechnen</option><option value="ende">Aktuelles Laufzeitende selbst angeben</option><option value="offen">Unbefristet, jederzeit kündbar</option></select></label>
+    <label class="field" data-m="ende"><span>Aktuelles Laufzeitende *</span><input id="c_end" type="date"></label>
+    <div class="grid2" data-m="beginn"><label class="field"><span>Vertragsbeginn *</span><input id="c_beg" type="date" required value="${iso(T0)}"></label>
       <label class="field"><span>Mindestlaufzeit</span><select id="c_lz"><option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12" selected>12 Monate</option><option value="24">24 Monate</option><option value="36">36 Monate</option></select></label></div>
-    <div class="grid2"><label class="field"><span>Verlängert sich um</span><select id="c_verl"><option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option><option value="24">24 Monate</option></select></label>
+    <div class="grid2"><label class="field" data-m="beginn ende"><span>Verlängert sich um</span><select id="c_verl"><option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option><option value="24">24 Monate</option></select></label>
       <label class="field"><span>Kündigungsfrist</span><select id="c_fr"><option value="0">jederzeit</option><option value="7">7 Tage</option><option value="14">14 Tage</option><option value="30" selected>1 Monat</option><option value="60">2 Monate</option><option value="90">3 Monate</option></select></label></div>
-    <p class="hint">Trag immer den <b>ursprünglichen</b> Vertragsbeginn ein, auch wenn der Vertrag schon verlängert wurde. Die App rechnet die Verlängerungen selbst weiter.</p>
+    <p class="hint" data-m="beginn">Trag immer den <b>ursprünglichen</b> Vertragsbeginn ein, auch wenn der Vertrag schon verlängert wurde. Die App rechnet die Verlängerungen selbst weiter.</p>
     <div class="prev" id="c_prev" aria-live="polite"></div>
     <div class="note" id="c_law" hidden>Verträge, die ab dem 1. März 2022 geschlossen wurden, verlängern sich nach der Mindestlaufzeit meist nur noch auf unbestimmte Zeit und sind dann monatlich kündbar (1 Monat Frist). Prüf kurz deine Unterlagen.
-      <button type="button" class="linkbtn" id="c_lawGo" style="display:block;padding-top:6px;color:var(--warn)">Monatlich kündbar übernehmen</button></div>`;
+      <button type="button" class="linkbtn" id="c_lawGo" style="display:block;padding-top:6px;color:var(--warn)">Als „unbefristet, 1 Monat Frist“ übernehmen</button></div>`;
   openSheet(head(item?'Bearbeiten':tpl?'Vertrag kopieren':'Neuer Eintrag')+`<form id="frm" novalidate>
     ${tpl?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
     <div class="seg"${item||tpl?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
@@ -645,8 +658,8 @@ function openForm(kind,item,camera,tpl){
         set('f_sn',src.sn);set('f_kauf',src.kauf);set('f_preis',src.preis||'');set('f_hae',src.haendler);set('f_gar',src.garantieMonate||0);set('f_nach',src.nachweis);
         s.querySelector('#f_ges').checked=!!src.geschaetzt}
       else{set('c_anb',src.anbieter);set('c_kat',src.kategorie);set('c_kd',src.kundennr);set('c_kost',src.kosten);set('c_kn',src.kostenNach==null?'':src.kostenNach);set('c_int',src.intervall);
-        set('c_lz',src.laufzeit);set('c_verl',src.verl);set('c_fr',src.frist);
-        if(item){set('c_beg',item.beginn);set('c_vnr',item.vertragsnr||'')}}
+        set('c_lz',src.laufzeit);set('c_verl',src.verl);set('c_fr',src.frist);set('c_mod',src.modus||'beginn');set('c_end',src.ende||'');
+        if(item){if(item.beginn)set('c_beg',item.beginn);set('c_vnr',item.vertragsnr||'')}}
     }
     s.querySelector('#frm').addEventListener('submit',async e=>{e.preventDefault();const err=s.querySelector('#err');let first=false;
       if([...s.querySelectorAll('input:not([type])')].some(i=>looksBanky(i.value))){
@@ -662,9 +675,12 @@ function openForm(kind,item,camera,tpl){
         if(item){Object.assign(item,dd);delete item.ex}else{first=!db.devices.some(x=>!x.ex);db.devices.push(Object.assign({id:uid()},dd))}
         tab='geraete';
       } else {
-        if(!v('c_anb')||!v('c_kost')||!v('c_beg')){err.textContent='Bitte Anbieter, Kosten und Vertragsbeginn ausfüllen.';err.hidden=false;return}
+        const md=v('c_mod');
+        if(!v('c_anb')||!v('c_kost')){err.textContent='Bitte Anbieter und Kosten ausfüllen.';err.hidden=false;return}
+        if(md==='beginn'&&!v('c_beg')){err.textContent='Bitte den Vertragsbeginn ausfüllen.';err.hidden=false;return}
+        if(md==='ende'&&!v('c_end')){err.textContent='Bitte das aktuelle Laufzeitende ausfüllen.';err.hidden=false;return}
         const cc={anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')===''?null:(parseFloat(v('c_kn'))||0),
-          intervall:Number(v('c_int')),beginn:v('c_beg'),laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr'))};
+          intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr'))};
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
       }
@@ -674,17 +690,23 @@ function openForm(kind,item,camera,tpl){
     });
     if(kind==='c'){ // Vorschau: was die App aus den Angaben ausrechnet
       const pv=s.querySelector('#c_prev'),law=s.querySelector('#c_law');
-      const upd=()=>{const beg=v('c_beg');if(!beg){pv.innerHTML='';law.hidden=true;return}
-        const t={beginn:beg,laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),status:'aktiv',kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')};
+      const upd=()=>{const md=v('c_mod'),beg=v('c_beg');
+        s.querySelectorAll('[data-m]').forEach(el=>el.hidden=!el.dataset.m.split(' ').includes(md));
+        s.querySelector('#c_knL').textContent=md==='ende'?'Anderer Preis nach diesem Laufzeitende (€, optional)':'Anderer Preis nach der Mindestlaufzeit (€, optional)';
+        law.hidden=true;
+        if((md==='beginn'&&!beg)||(md==='ende'&&!v('c_end'))){pv.innerHTML='';return}
+        const t={modus:md,ende:v('c_end'),beginn:beg,laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),status:'aktiv',kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')};
         const i=contractInfo(t),pc=priceChange(t);
+        if(i.offen){pv.innerHTML=`<div class="label">So rechnet die App</div><div>Jederzeit kündbar mit ${FRIST(t.frist)}.</div>
+          <div>Bei Kündigung heute endet er am <b>${fmtD(i.end)}</b>.</div>`;return}
         pv.innerHTML=`<div class="label">So rechnet die App</div>
           <div>Nächstes Laufzeitende <b>${fmtD(i.end)}</b>${i.k>0?` · schon <b>${i.k}×</b> verlängert`:''}</div>
           <div>Spätestens kündigen <b>${i.by?fmtD(i.by):'–'}</b>${i.by?` (${inDays(days(i.by))})`:''}</div>
           ${pc?(days(pc.date)<=0?`<div>Aktueller Preis <b>${eur(pc.preis)}</b> (seit ${fmtD(pc.date)})</div>`
             :`<div>Ab ${fmtD(pc.date)} <b>${eur(pc.preis)}</b> statt ${eur(t.kosten)}${pc.preis>t.kosten?' · wer das vermeiden will, kündigt bis '+fmtD(addDays(pc.date,-t.frist)):''}</div>`):''}`;
-        law.hidden=!(beg>='2022-03-01'&&t.verl>1)};
+        law.hidden=!(md==='beginn'&&beg>='2022-03-01'&&t.verl>1)};
       s.querySelector('#frm').addEventListener('input',upd);s.querySelector('#frm').addEventListener('change',upd);
-      s.querySelector('#c_lawGo').onclick=()=>{s.querySelector('#c_verl').value='1';s.querySelector('#c_fr').value='30';buzz(6);upd()};
+      s.querySelector('#c_lawGo').onclick=()=>{s.querySelector('#c_mod').value='offen';s.querySelector('#c_fr').value='30';buzz(6);upd()};
       upd();
     }
     if(camera&&kind==='d'){ // „Beleg fotografieren“: Kamera direkt öffnen
