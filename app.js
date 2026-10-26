@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.4.1.0';
+const APP_VERSION='0.4.2.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -335,7 +335,11 @@ function contractInfo(c){
   }
   return {end:start,by:null,k:0};
 }
-function monthly(c){return Number(c.kosten||0)/Number(c.intervall||1)}
+/* Optionaler anderer Preis nach der Mindestlaufzeit */
+function priceChange(c){if(c.kostenNach==null||c.kostenNach==='')return null;const n=Number(c.kostenNach);
+  if(!(n>=0)||n===Number(c.kosten||0))return null;return {date:addMonths(parse(c.beginn),Number(c.laufzeit||1)),preis:n}}
+function price(c){const p=priceChange(c);return p&&days(p.date)<=0?p.preis:Number(c.kosten||0)}
+function monthly(c){return price(c)/Number(c.intervall||1)}
 function deviceInfo(d){
   const kauf=parse(d.kauf);
   const gew=addMonths(kauf,24);
@@ -364,6 +368,8 @@ function upcoming(){
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['Gewährleistung',i.gew],['Herstellergarantie',i.gar]].forEach(([t,dt])=>{if(!dt)return;const n=days(dt);
       if(n>=0&&n<=90) ev.push({date:dt,n,title:d.name,sub:t+' läuft ab',kind:'d',id:d.id})})});
+  db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const p=priceChange(c);if(!p)return;const n=days(p.date);
+    if(n>=0&&n<=60) ev.push({date:p.date,n,title:c.anbieter,sub:`Neuer Preis ${eur(p.preis)} ${INTERVALL[c.intervall]||''} (bisher ${eur(c.kosten)})`,kind:'c',id:c.id})});
   return ev.sort((a,b)=>a.n-b.n);
 }
 
@@ -456,7 +462,7 @@ function viewContracts(){
     <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
     <div class="list">${list.length?list.map(c=>`<button type="button" class="row" data-kind="c" data-open="${c.id}">
       <div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>
-      <div class="main"><div class="t">${esc(c.anbieter)}</div><div class="s">${esc(c.kategorie)} · ${eur(c.kosten)} ${INTERVALL[c.intervall]||''}</div><div class="pl">${conPill(c)}</div></div>
+      <div class="main"><div class="t">${esc(c.anbieter)}</div><div class="s">${esc(c.kategorie)} · ${eur(price(c))} ${INTERVALL[c.intervall]||''}</div><div class="pl">${conPill(c)}</div></div>
       <span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')
       :`<div class="empty">Noch keine Verträge. Tippe auf „Neu“ und trage Kosten, Laufzeit und Kündigungsfrist ein.</div>`}</div>
   </section>`;
@@ -550,7 +556,9 @@ function openDetail(kind,id,from){
     openSheet(head(esc(c.anbieter))+`<div style="margin:-6px 0 14px">${conPill(c)}</div>
       <dl class="kv">
         <dt>Kategorie</dt><dd>${esc(c.kategorie)}</dd>
-        <dt>Kosten</dt><dd>${eur(c.kosten)} ${INTERVALL[c.intervall]||''} · <span class="num">${eur(monthly(c))}</span>/Monat</dd>
+        <dt>Kosten</dt><dd>${eur(price(c))} ${INTERVALL[c.intervall]||''} · <span class="num">${eur(monthly(c))}</span>/Monat</dd>
+        ${(()=>{const p=priceChange(c);if(!p)return '';const past=days(p.date)<=0;
+          return `<dt>Preisänderung</dt><dd>${past?`seit ${fmtD(p.date)} ${eur(p.preis)} (vorher ${eur(c.kosten)})`:`ab ${fmtD(p.date)} ${eur(p.preis)} statt ${eur(c.kosten)} <span class="pill ${p.preis>c.kosten?'p-warn':'p-ok'}">${p.preis>c.kosten?'teurer':'günstiger'}</span>`}</dd>`})()}
         <dt>Beginn</dt><dd>${fmtD(parse(c.beginn))}</dd>
         <dt>Mindestlaufzeit</dt><dd>${c.laufzeit} Monat${c.laufzeit>1?'e':''}, danach je ${c.verl==12?'12 Monate':c.verl+' Monat'+(c.verl>1?'e':'')}</dd>
         <dt>Kündigungsfrist</dt><dd>${Number(c.frist)?c.frist+' Tage':'jederzeit'}</dd>
@@ -611,6 +619,7 @@ function openForm(kind,item,camera,tpl){
       <label class="field"><span>Vertragsnummer</span><input id="c_vnr" autocomplete="off"></label></div>
     <div class="grid2"><label class="field"><span>Kosten (€) *</span><input id="c_kost" type="number" step="0.01" min="0" required inputmode="decimal"></label>
       <label class="field"><span>Zahlweise</span><select id="c_int"><option value="1">monatlich</option><option value="3">vierteljährlich</option><option value="12">jährlich</option></select></label></div>
+    <label class="field"><span>Anderer Preis nach der Mindestlaufzeit (€, optional)</span><input id="c_kn" type="number" step="0.01" min="0" inputmode="decimal" placeholder="leer lassen, wenn der Preis gleich bleibt"></label>
     <div class="grid2"><label class="field"><span>Vertragsbeginn *</span><input id="c_beg" type="date" required value="${iso(T0)}"></label>
       <label class="field"><span>Mindestlaufzeit</span><select id="c_lz"><option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12" selected>12 Monate</option><option value="24">24 Monate</option><option value="36">36 Monate</option></select></label></div>
     <div class="grid2"><label class="field"><span>Verlängert sich um</span><select id="c_verl"><option value="1">1 Monat</option><option value="3">3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option><option value="24">24 Monate</option></select></label>
@@ -635,7 +644,7 @@ function openForm(kind,item,camera,tpl){
       if(kind==='d'){set('f_name',src.name);set('f_kat',src.kategorie);set('f_raum',src.raum);set('f_her',src.hersteller);set('f_mod',src.modell);
         set('f_sn',src.sn);set('f_kauf',src.kauf);set('f_preis',src.preis||'');set('f_hae',src.haendler);set('f_gar',src.garantieMonate||0);set('f_nach',src.nachweis);
         s.querySelector('#f_ges').checked=!!src.geschaetzt}
-      else{set('c_anb',src.anbieter);set('c_kat',src.kategorie);set('c_kd',src.kundennr);set('c_kost',src.kosten);set('c_int',src.intervall);
+      else{set('c_anb',src.anbieter);set('c_kat',src.kategorie);set('c_kd',src.kundennr);set('c_kost',src.kosten);set('c_kn',src.kostenNach==null?'':src.kostenNach);set('c_int',src.intervall);
         set('c_lz',src.laufzeit);set('c_verl',src.verl);set('c_fr',src.frist);
         if(item){set('c_beg',item.beginn);set('c_vnr',item.vertragsnr||'')}}
     }
@@ -654,7 +663,7 @@ function openForm(kind,item,camera,tpl){
         tab='geraete';
       } else {
         if(!v('c_anb')||!v('c_kost')||!v('c_beg')){err.textContent='Bitte Anbieter, Kosten und Vertragsbeginn ausfüllen.';err.hidden=false;return}
-        const cc={anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,
+        const cc={anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')===''?null:(parseFloat(v('c_kn'))||0),
           intervall:Number(v('c_int')),beginn:v('c_beg'),laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr'))};
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
@@ -666,11 +675,13 @@ function openForm(kind,item,camera,tpl){
     if(kind==='c'){ // Vorschau: was die App aus den Angaben ausrechnet
       const pv=s.querySelector('#c_prev'),law=s.querySelector('#c_law');
       const upd=()=>{const beg=v('c_beg');if(!beg){pv.innerHTML='';law.hidden=true;return}
-        const t={beginn:beg,laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),status:'aktiv'};
-        const i=contractInfo(t);
+        const t={beginn:beg,laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),status:'aktiv',kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')};
+        const i=contractInfo(t),pc=priceChange(t);
         pv.innerHTML=`<div class="label">So rechnet die App</div>
           <div>Nächstes Laufzeitende <b>${fmtD(i.end)}</b>${i.k>0?` · schon <b>${i.k}×</b> verlängert`:''}</div>
-          <div>Spätestens kündigen <b>${i.by?fmtD(i.by):'–'}</b>${i.by?` (${inDays(days(i.by))})`:''}</div>`;
+          <div>Spätestens kündigen <b>${i.by?fmtD(i.by):'–'}</b>${i.by?` (${inDays(days(i.by))})`:''}</div>
+          ${pc?(days(pc.date)<=0?`<div>Aktueller Preis <b>${eur(pc.preis)}</b> (seit ${fmtD(pc.date)})</div>`
+            :`<div>Ab ${fmtD(pc.date)} <b>${eur(pc.preis)}</b> statt ${eur(t.kosten)}${pc.preis>t.kosten?' · wer das vermeiden will, kündigt bis '+fmtD(addDays(pc.date,-t.frist)):''}</div>`):''}`;
         law.hidden=!(beg>='2022-03-01'&&t.verl>1)};
       s.querySelector('#frm').addEventListener('input',upd);s.querySelector('#frm').addEventListener('change',upd);
       s.querySelector('#c_lawGo').onclick=()=>{s.querySelector('#c_verl').value='1';s.querySelector('#c_fr').value='30';buzz(6);upd()};
