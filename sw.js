@@ -1,11 +1,13 @@
 // Belegbox Service Worker – nur App-Dateien werden gecacht, nie Nutzerdaten.
-const CACHE = 'belegbox-0.6.5.0';
+const CACHE = 'belegbox-0.6.5.1';
 const FILES = ['./', 'index.html', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/icon-180.png', 'icons/badge-96.png',
   'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
+  // cache: 'reload' umgeht den HTTP-Zwischenspeicher des Browsers – sonst könnte eine neue Version
+  // mit alten Dateien (GitHub Pages erlaubt 10 Min. Caching) installiert werden.
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(u => new Request(u, { cache: 'reload' })))));
 });
 
 self.addEventListener('activate', e => {

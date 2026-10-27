@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.5.0';
+const APP_VERSION='0.6.5.1';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -1303,7 +1303,7 @@ if('serviceWorker' in navigator){
   let reloading=false;const hadController=!!navigator.serviceWorker.controller;
   // Nur neu laden, wenn eine bestehende Version abgelöst wird – nicht beim allerersten Installieren
   navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading||!hadController)return;reloading=true;location.reload()});
-  navigator.serviceWorker.register('sw.js').then(reg=>{swReg=reg;
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{swReg=reg;
     const offer=w=>{const r=document.getElementById('updRoot');
       r.innerHTML='<div class="upd" role="status"><span>Neue Version der Belegbox verfügbar</span><button type="button" id="updGo">Aktualisieren</button><button type="button" id="updX" aria-label="Später">✕</button></div>';
       document.getElementById('updGo').onclick=()=>saving.then(()=>w.postMessage('SKIP_WAITING'));
