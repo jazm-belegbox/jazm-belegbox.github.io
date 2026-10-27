@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.0.0';
+const APP_VERSION='0.6.1.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -638,6 +638,13 @@ function upcoming(){
 const main=document.getElementById('main');
 const NOTEICON='<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="hat Notiz"><path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8 9h8M8 13h4"/></svg>';
 const noteBlock=it=>it.notiz?`<div class="label" style="margin-bottom:8px">Notizen & Hinweise</div><div class="notetext">${esc(it.notiz)}</div>`:'';
+/* Kleines Bild für „Demnächst fällig“: Logo, Gerätefoto oder PDF-Vorschau, sonst Anfangsbuchstabe */
+function evMini(e){
+  if(e.kind==='c'){const c=db.contracts.find(x=>x.id===e.id);if(!c)return '';
+    return c.logo?`<span class="mini logo"><img src="${c.logo}" alt=""></span>`:`<span class="mini">${esc(c.anbieter.charAt(0).toUpperCase())}</span>`}
+  const d=db.devices.find(x=>x.id===e.id);if(!d)return '';
+  const th=d.foto||((d.docs||[]).find(x=>x.thumb)||{}).thumb;
+  return th?`<span class="mini"><img src="${th}" alt=""${d.foto?'':' style="object-position:top"'}></span>`:`<span class="mini">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</span>`}
 function conTile(c){return c.logo?`<div class="tile logo"><img src="${c.logo}" alt=""></div>`:`<div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>`}
 function tileFor(d){const th=!d.foto&&(d.docs||[]).find(x=>x.thumb);if(th)return `<div class="tile"><img src="${th.thumb}" alt="" style="object-position:top"></div>`;
   return d.foto?`<div class="tile"><img src="${d.foto}" alt=""></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
@@ -696,7 +703,7 @@ function viewHome(){
     <div class="sechead"><h2>Demnächst fällig</h2><span class="label">nächste 90 Tage</span></div>
     <div class="list">${ev.length?ev.map(e=>`<button type="button" class="row" data-kind="${e.kind}" data-open="${e.id}">
         <div class="date"><b>${e.date.getDate()}</b><span>${e.date.toLocaleDateString('de-DE',{month:'short'}).replace('.','')}</span></div>
-        <div style="min-width:0"><div class="t">${esc(e.title)}</div><div class="s">${esc(e.sub)}</div></div>
+        <div class="evmain">${evMini(e)}<div style="min-width:0"><div class="t">${esc(e.title)}</div><div class="s">${esc(e.sub)}</div></div></div>
         <span class="pill ${e.n<=14?'p-crit':e.n<=45?'p-warn':'p-ok'}">${inDays(e.n)}</span></button>`).join('')
       :`<div class="empty">Keine Fristen in den nächsten 90 Tagen.</div>`}</div>
     ${ohne?`<div class="sechead"><h2>Ohne Nachweis</h2><button type="button" class="ghost" data-goto="geraete">Alle Geräte</button></div>
