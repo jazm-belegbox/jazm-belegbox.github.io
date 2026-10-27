@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.1.0';
+const APP_VERSION='0.6.2.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -450,9 +450,10 @@ async function prepDoc(f,isPdf){const id='f'+uid()+uid();
     return {buf,meta:{id,name:f.name||'Beleg.pdf',type:'application/pdf',size:buf.byteLength,thumb,pages,added:iso(T0)}}}
   const r=await prepImage(f),buf=await r.blob.arrayBuffer();
   return {buf,meta:{id,name:(f.name||'Bild').replace(/\.[^.]+$/,'')+'.jpg',type:'image/jpeg',size:buf.byteLength,thumb:r.thumb,added:iso(T0)}}}
-function docRow(d,edit){const pdf=d.type==='application/pdf';
+function docRow(d,edit,cov){const pdf=d.type==='application/pdf';
   const inner=`<div class="dthumb">${d.thumb?`<img src="${d.thumb}" alt="">`:`<span>${pdf?'PDF':'BILD'}</span>`}</div>
-    <div class="dmain"><b>${esc(d.name)}</b><span>${pdf?'PDF'+(d.pages?' · '+d.pages+' Seite'+(d.pages>1?'n':''):''):'Bild'} · ${fmtSize(d.size)}</span></div>`;
+    <div class="dmain"><b>${esc(d.name)}</b><span>${pdf?'PDF'+(d.pages?' · '+d.pages+' Seite'+(d.pages>1?'n':''):''):'Bild'} · ${fmtSize(d.size)}</span>
+    ${cov!==undefined&&d.thumb?`<button type="button" class="cov" data-cov="${d.id}" aria-pressed="${cov}">${cov?'★ Titelbild':'☆ Als Titelbild'}</button>`:''}</div>`;
   return `<div class="docrow">${edit?`<div class="dbtn">${inner}</div><button type="button" class="x" data-rm="${d.id}" aria-label="Entfernen">✕</button>`
     :`<button type="button" class="dbtn" data-doc="${d.id}">${inner}<span class="dgo">Ansehen</span></button>`}</div>`}
 function docSection(it){const ds=it.docs||[];if(!ds.length)return '';
@@ -460,11 +461,13 @@ function docSection(it){const ds=it.docs||[];if(!ds.length)return '';
 function bindDocs(s,it){s.querySelectorAll('[data-doc]').forEach(b=>b.onclick=()=>{const d=(it.docs||[]).find(x=>x.id===b.dataset.doc);if(d)openViewer(d)})}
 const DOCFIELD=`<div class="field"><span>Belege & Dokumente (PDF oder Bild, auch mehrere)</span><div class="doclist" id="docList"></div>
   <label class="btn docadd"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Datei hinzufügen<input id="docIn" type="file" accept="application/pdf,.pdf,image/*" multiple hidden></label></div>`;
-function docEditor(s,docs){
+function docEditor(s,docs,opt){
+  let cover=opt&&opt.cover||null;const covOn=!!opt;
   const list=s.querySelector('#docList'),inp=s.querySelector('#docIn'),pending=new Map(),removed=[];let busy=0;
-  const draw=()=>{list.innerHTML=docs.map(d=>docRow(d,true)).join('')+(busy?'<div class="docrow"><div class="dbtn"><div class="dthumb"><span class="spin"></span></div><div class="dmain"><b>Wird gelesen …</b></div></div></div>':'');
+  const draw=()=>{list.innerHTML=docs.map(d=>docRow(d,true,covOn?d.id===cover:undefined)).join('')+(busy?'<div class="docrow"><div class="dbtn"><div class="dthumb"><span class="spin"></span></div><div class="dmain"><b>Wird gelesen …</b></div></div></div>':'');
     list.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const id=b.dataset.rm;docs=docs.filter(x=>x.id!==id);
-      if(pending.has(id))pending.delete(id);else removed.push(id);buzz(6);draw()})};
+      if(pending.has(id))pending.delete(id);else removed.push(id);if(cover===id)cover=null;buzz(6);draw()});
+    list.querySelectorAll('[data-cov]').forEach(b=>b.onclick=()=>{cover=cover===b.dataset.cov?null:b.dataset.cov;buzz(6);draw()})};
   inp.addEventListener('change',async()=>{const files=[...inp.files];inp.value='';
     for(const f of files){
       const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name);
@@ -475,7 +478,7 @@ function docEditor(s,docs){
       catch(x){toast(`„${f.name}“ konnte nicht gelesen werden.`)}
       busy--;draw()}});
   draw();
-  return {get docs(){return docs},busy:()=>busy>0,
+  return {get docs(){return docs},get cover(){return cover&&docs.some(x=>x.id===cover)?cover:null},busy:()=>busy>0,
     async commit(){for(const [id,buf] of pending)await filePut(id,await sealFile(id,buf));pending.clear()},
     cleanup(){removed.forEach(id=>fileDel(id).catch(()=>{}))}};
 }
@@ -643,11 +646,17 @@ function evMini(e){
   if(e.kind==='c'){const c=db.contracts.find(x=>x.id===e.id);if(!c)return '';
     return c.logo?`<span class="mini logo"><img src="${c.logo}" alt=""></span>`:`<span class="mini">${esc(c.anbieter.charAt(0).toUpperCase())}</span>`}
   const d=db.devices.find(x=>x.id===e.id);if(!d)return '';
-  const th=d.foto||((d.docs||[]).find(x=>x.thumb)||{}).thumb;
-  return th?`<span class="mini"><img src="${th}" alt=""${d.foto?'':' style="object-position:top"'}></span>`:`<span class="mini">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</span>`}
+  const t=devThumb(d);
+  return t?`<span class="mini"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></span>`:`<span class="mini">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</span>`}
 function conTile(c){return c.logo?`<div class="tile logo"><img src="${c.logo}" alt=""></div>`:`<div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>`}
-function tileFor(d){const th=!d.foto&&(d.docs||[]).find(x=>x.thumb);if(th)return `<div class="tile"><img src="${th.thumb}" alt="" style="object-position:top"></div>`;
-  return d.foto?`<div class="tile"><img src="${d.foto}" alt=""></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
+/* Kachelbild eines Geräts: gewähltes Titelbild > Foto > erstes Bild-Dokument > erste PDF-Seite */
+function devThumb(d){const ds=(d.docs||[]).filter(x=>x.thumb);
+  const c=d.cover&&ds.find(x=>x.id===d.cover);if(c)return {src:c.thumb,top:c.type==='application/pdf'};
+  if(d.foto)return {src:d.foto,top:false};
+  const im=ds.find(x=>x.type!=='application/pdf');if(im)return {src:im.thumb,top:false};
+  return ds[0]?{src:ds[0].thumb,top:true}:null}
+function tileFor(d){const t=devThumb(d);
+  return t?`<div class="tile"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
 function render(mode){
   if(!db)return;
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
@@ -957,7 +966,7 @@ function openForm(kind,item,camera,tpl){
     <div class="actions"><button type="submit" class="btn primary">Speichern</button><button type="button" class="btn" data-close>Abbrechen</button></div></form>`,
   s=>{
     let logoVal=src0&&src0.logo?src0.logo:undefined;
-    const D=docEditor(s,item&&item.docs?item.docs.slice():[]); // Kopien übernehmen keine Dateien
+    const D=docEditor(s,item&&item.docs?item.docs.slice():[],kind==='d'?{cover:item&&item.cover}:null); // Kopien übernehmen keine Dateien
     s.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>openForm(b.dataset.k));
     const v=id=>s.querySelector('#'+id).value.trim();
     const src=item||tpl;
@@ -991,7 +1000,7 @@ function openForm(kind,item,camera,tpl){
         if(!await commitDocs())return;
         const dd={name:v('f_name'),kategorie:v('f_kat'),raum:v('f_raum'),hersteller:v('f_her'),modell:v('f_mod'),sn:v('f_sn'),
           kauf:v('f_kauf'),geschaetzt:s.querySelector('#f_ges').checked,preis:parseFloat(v('f_preis'))||0,haendler:v('f_hae'),
-          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,rate,notiz:v('x_note')};
+          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,cover:D.cover,rate,notiz:v('x_note')};
         if(item){Object.assign(item,dd);delete item.ex}else{first=!db.devices.some(x=>!x.ex);db.devices.push(Object.assign({id:uid()},dd))}
         tab='geraete';
       } else {
