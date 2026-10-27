@@ -1,7 +1,8 @@
 // Belegbox Service Worker – nur App-Dateien werden gecacht, nie Nutzerdaten.
-const CACHE = 'belegbox-0.4.4.0';
+const CACHE = 'belegbox-0.5.0.0';
 const FILES = ['./', 'index.html', 'app.js', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/icon-180.png', 'icons/badge-96.png'];
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/icon-180.png', 'icons/badge-96.png',
+  'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));

@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.4.4.0';
+const APP_VERSION='0.5.0.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -104,7 +104,7 @@ async function changePassword(oldPw,newPw){
   vmeta=Object.assign({},vmeta,{iter:ITER,salt:toB64(salt),wrapPw:await seal(kek,dekRaw)});
   await save();
 }
-function lock(anim){saving.then(()=>{key=null;db=null;if(dekRaw)dekRaw.fill(0);dekRaw=null;vmeta=null;closeSheet(false);setFan(false);main.innerHTML='';shown={};showLock(anim===true)})}
+function lock(anim){saving.then(()=>{key=null;db=null;if(dekRaw)dekRaw.fill(0);dekRaw=null;vmeta=null;closeViewer();closeSheet(false);setFan(false);main.innerHTML='';shown={};showLock(anim===true)})}
 
 /* Fingerabdruck / Gesichtserkennung über einen Passkey mit PRF-Erweiterung */
 const bioPossible=()=>!!(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
@@ -236,7 +236,7 @@ function showLock(closing){
   // Entsperrt: Rad dreht, Tür schwingt auf, App kommt dahinter hervor
   function opened(){
     V.classList.remove('busy');
-    document.body.classList.remove('locked');lastAct=Date.now();tab='home';filter='alle';shown={};askPersist();buzz([10,40,18]);
+    document.body.classList.remove('locked');lastAct=Date.now();tab='home';filter='alle';shown={};askPersist();buzz([10,40,18]);setTimeout(cleanFiles,5000);
     if(!motion()){L.innerHTML='';render('rise');return}
     L.classList.add('leaving');V.classList.add('open');
     setTimeout(()=>{if(tok!==lockTok||!db)return;
@@ -258,7 +258,7 @@ function showLock(closing){
     try{restoreVault(await readBackupFile(file))}catch(x){fail(x.message)}});
   const rs=L.querySelector('#lreset');
   if(rs){let armed=false;rs.onclick=()=>{if(!armed){armed=true;buzz(10);rs.classList.add('sure');rs.textContent='Wirklich alles löschen? Nochmal tippen';return}
-    try{localStorage.removeItem(VKEY)}catch(e){}showLock()}}
+    try{localStorage.removeItem(VKEY)}catch(e){}fileClear().catch(()=>{});showLock()}}
   if(!bio){const first=L.querySelector('input');if(first)first.focus({preventScroll:true})}
 }
 
@@ -273,24 +273,131 @@ async function deliverFile(name,text,type){
   document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);return true;
 }
 
+/* ---------- Belege & Dokumente (PDF/Bild) ----------
+   Große Dateien liegen nicht im kleinen Tresor-Speicher, sondern einzeln in IndexedDB –
+   jede mit demselben Datenschlüssel AES-256-GCM-verschlüsselt (ID als Zusatzdaten gebunden).
+   Im Tresor stehen nur Name, Größe und ein kleines Vorschaubild. */
+const IDB_NAME='belegbox-files',STORE='files';
+let idbP=null;
+function idb(){return idbP||(idbP=new Promise((res,rej)=>{const r=indexedDB.open(IDB_NAME,1);
+  r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>{idbP=null;rej(r.error)}}))}
+async function idbDo(mode,fn){const d=await idb();return new Promise((res,rej)=>{const tx=d.transaction(STORE,mode);const r=fn(tx.objectStore(STORE));
+  tx.oncomplete=()=>res(r&&r.result);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error)})}
+const fileGet=id=>idbDo('readonly',st=>st.get(id)),filePut=(id,v)=>idbDo('readwrite',st=>st.put(v,id)),
+  fileDel=id=>idbDo('readwrite',st=>st.delete(id)),fileClear=()=>idbDo('readwrite',st=>st.clear()),fileKeys=()=>idbDo('readonly',st=>st.getAllKeys());
+async function sealFile(id,buf){const iv=rnd(12);return {iv,ct:await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:te.encode(id)},key,buf)}}
+async function openDoc(id){const r=await fileGet(id);if(!r)throw new Error('missing');
+  return crypto.subtle.decrypt({name:'AES-GCM',iv:r.iv,additionalData:te.encode(id)},key,r.ct)}
+const allDocIds=()=>db?[...db.devices,...db.contracts].flatMap(x=>(x.docs||[]).map(d=>d.id)):[];
+async function cleanFiles(){if(!db)return;try{const keep=new Set(allDocIds());for(const k of await fileKeys())if(!keep.has(k))await fileDel(k)}catch(e){}}
+const fmtSize=n=>n>=1e6?(n/1e6).toLocaleString('de-DE',{maximumFractionDigits:1})+' MB':Math.max(1,Math.round(n/1e3))+' KB';
+
+/* PDF-Anzeige mit pdf.js (liegt im Repo unter vendor/, wird erst bei Bedarf geladen) */
+let pdfjsP=null;
+function pdfjs(){return pdfjsP||(pdfjsP=import('./vendor/pdfjs/pdf.min.mjs').then(m=>{m.GlobalWorkerOptions.workerSrc='vendor/pdfjs/pdf.worker.min.mjs';return m}).catch(e=>{pdfjsP=null;throw e}))}
+async function pdfOpen(buf){const lib=await pdfjs();return lib.getDocument({data:new Uint8Array(buf.slice(0)),isEvalSupported:false,disableAutoFetch:true,disableStream:true,enableXfa:false}).promise}
+const pdfClose=doc=>{try{if(doc.loadingTask)doc.loadingTask.destroy();else if(doc.destroy)doc.destroy()}catch(e){}};
+async function pdfThumb(buf){const doc=await pdfOpen(buf);
+  try{const p=await doc.getPage(1),v1=p.getViewport({scale:1}),vp=p.getViewport({scale:240/v1.width});
+    const cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);
+    const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);
+    await p.render({canvas:cv,viewport:vp}).promise;return {thumb:cv.toDataURL('image/jpeg',.7),pages:doc.numPages}}
+  finally{pdfClose(doc)}}
+function loadImg(f){return new Promise((res,rej)=>{const u=URL.createObjectURL(f),im=new Image();
+  im.onload=()=>{URL.revokeObjectURL(u);res(im)};im.onerror=e=>{URL.revokeObjectURL(u);rej(e)};im.src=u})}
+async function prepImage(f){const im=await loadImg(f);
+  const draw=max=>{const k=Math.min(1,max/Math.max(im.naturalWidth,im.naturalHeight));const cv=document.createElement('canvas');
+    cv.width=Math.max(1,Math.round(im.naturalWidth*k));cv.height=Math.max(1,Math.round(im.naturalHeight*k));
+    const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.drawImage(im,0,0,cv.width,cv.height);return cv};
+  const blob=await new Promise((r,j)=>draw(2200).toBlob(b=>b?r(b):j(new Error('blob')),'image/jpeg',.85));
+  return {blob,thumb:draw(240).toDataURL('image/jpeg',.7)}}
+async function prepDoc(f,isPdf){const id='f'+uid()+uid();
+  if(isPdf){const buf=await f.arrayBuffer();let thumb='',pages=0;try{const t=await pdfThumb(buf);thumb=t.thumb;pages=t.pages}catch(e){console.warn('PDF-Vorschau fehlgeschlagen',e)}
+    return {buf,meta:{id,name:f.name||'Beleg.pdf',type:'application/pdf',size:buf.byteLength,thumb,pages,added:iso(T0)}}}
+  const r=await prepImage(f),buf=await r.blob.arrayBuffer();
+  return {buf,meta:{id,name:(f.name||'Bild').replace(/\.[^.]+$/,'')+'.jpg',type:'image/jpeg',size:buf.byteLength,thumb:r.thumb,added:iso(T0)}}}
+function docRow(d,edit){const pdf=d.type==='application/pdf';
+  const inner=`<div class="dthumb">${d.thumb?`<img src="${d.thumb}" alt="">`:`<span>${pdf?'PDF':'BILD'}</span>`}</div>
+    <div class="dmain"><b>${esc(d.name)}</b><span>${pdf?'PDF'+(d.pages?' · '+d.pages+' Seite'+(d.pages>1?'n':''):''):'Bild'} · ${fmtSize(d.size)}</span></div>`;
+  return `<div class="docrow">${edit?`<div class="dbtn">${inner}</div><button type="button" class="x" data-rm="${d.id}" aria-label="Entfernen">✕</button>`
+    :`<button type="button" class="dbtn" data-doc="${d.id}">${inner}<span class="dgo">Ansehen</span></button>`}</div>`}
+function docSection(it){const ds=it.docs||[];if(!ds.length)return '';
+  return `<div class="label" style="margin-bottom:8px">Belege & Dokumente</div><div class="doclist" style="margin-bottom:16px">${ds.map(d=>docRow(d,false)).join('')}</div>`}
+function bindDocs(s,it){s.querySelectorAll('[data-doc]').forEach(b=>b.onclick=()=>{const d=(it.docs||[]).find(x=>x.id===b.dataset.doc);if(d)openViewer(d)})}
+const DOCFIELD=`<div class="field"><span>Belege & Dokumente (PDF oder Bild, auch mehrere)</span><div class="doclist" id="docList"></div>
+  <label class="btn docadd"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Datei hinzufügen<input id="docIn" type="file" accept="application/pdf,.pdf,image/*" multiple hidden></label></div>`;
+function docEditor(s,docs){
+  const list=s.querySelector('#docList'),inp=s.querySelector('#docIn'),pending=new Map(),removed=[];let busy=0;
+  const draw=()=>{list.innerHTML=docs.map(d=>docRow(d,true)).join('')+(busy?'<div class="docrow"><div class="dbtn"><div class="dthumb"><span class="spin"></span></div><div class="dmain"><b>Wird gelesen …</b></div></div></div>':'');
+    list.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const id=b.dataset.rm;docs=docs.filter(x=>x.id!==id);
+      if(pending.has(id))pending.delete(id);else removed.push(id);buzz(6);draw()})};
+  inp.addEventListener('change',async()=>{const files=[...inp.files];inp.value='';
+    for(const f of files){
+      const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name);
+      if(!isPdf&&!/^image\//.test(f.type)){toast(`„${f.name}“ ist weder PDF noch Bild.`);continue}
+      if(f.size>25e6){toast(`„${f.name}“ ist größer als 25 MB.`);continue}
+      busy++;draw();
+      try{const r=await prepDoc(f,isPdf);pending.set(r.meta.id,r.buf);docs.push(r.meta);buzz(8)}
+      catch(x){toast(`„${f.name}“ konnte nicht gelesen werden.`)}
+      busy--;draw()}});
+  draw();
+  return {get docs(){return docs},busy:()=>busy>0,
+    async commit(){for(const [id,buf] of pending)await filePut(id,await sealFile(id,buf));pending.clear()},
+    cleanup(){removed.forEach(id=>fileDel(id).catch(()=>{}))}};
+}
+/* Betrachter: entschlüsselt nur im Arbeitsspeicher, nichts landet unverschlüsselt im Download-Ordner */
+let viewerTok=0;
+async function openViewer(d){
+  const tok=++viewerTok,V=document.getElementById('viewer');
+  V.innerHTML=`<div class="vhead"><button type="button" class="x" id="vx" aria-label="Schließen">✕</button><b>${esc(d.name)}</b>
+    <button type="button" class="ghost" id="vzoom" aria-pressed="false">Zoom</button><button type="button" class="ghost" id="vshare">Teilen</button></div>
+    <div class="vbody" id="vbody"><div class="vload"><span class="spin"></span>Wird entschlüsselt …</div></div>`;
+  V.hidden=false;document.body.style.overflow='hidden';buzz(6);
+  if(motion())V.animate([{opacity:0,transform:'translateY(30px)'},{opacity:1,transform:'none'}],{duration:280,easing:'cubic-bezier(.2,.85,.25,1)'});
+  const body=V.querySelector('#vbody'),zb=V.querySelector('#vzoom');
+  V.querySelector('#vx').onclick=closeViewer;
+  zb.onclick=()=>{const on=body.classList.toggle('z2');zb.setAttribute('aria-pressed',String(on));buzz(5)};
+  let buf;
+  try{buf=await openDoc(d.id)}catch(x){if(tok===viewerTok)body.innerHTML='<div class="vload">Die Datei fehlt auf diesem Gerät oder ist beschädigt.</div>';return}
+  if(tok!==viewerTok)return;
+  V.querySelector('#vshare').onclick=()=>deliverFile(d.name,buf,d.type);
+  if(d.type!=='application/pdf'){V._url=URL.createObjectURL(new Blob([buf],{type:d.type}));body.innerHTML=`<img src="${V._url}" alt="${esc(d.name)}">`;return}
+  try{
+    const doc=await pdfOpen(buf);if(tok!==viewerTok){pdfClose(doc);return}V._doc=doc;body.innerHTML='';
+    const W=Math.max(200,body.clientWidth-16),dpr=Math.min(2.5,window.devicePixelRatio||1),n=Math.min(doc.numPages,40);
+    for(let i=1;i<=n;i++){const p=await doc.getPage(i);if(tok!==viewerTok)return;
+      const v1=p.getViewport({scale:1}),vp=p.getViewport({scale:Math.min(4,W*dpr*1.4/v1.width)});
+      const cv=document.createElement('canvas');cv.width=Math.ceil(vp.width);cv.height=Math.ceil(vp.height);body.appendChild(cv);
+      await p.render({canvas:cv,viewport:vp}).promise}
+    if(doc.numPages>n)body.insertAdjacentHTML('beforeend',`<div class="vload">Weitere ${doc.numPages-n} Seiten über „Teilen“ öffnen.</div>`);
+  }catch(x){if(tok===viewerTok)body.innerHTML=`<div class="vload">${x&&x.name==='PasswordException'?'Diese PDF ist mit einem Passwort geschützt.':'Die PDF konnte hier nicht angezeigt werden.'} Öffne sie über „Teilen“ mit einer PDF-App.</div>`}
+}
+function closeViewer(){viewerTok++;const V=document.getElementById('viewer');if(!V||V.hidden)return;
+  if(V._doc){pdfClose(V._doc);V._doc=null}if(V._url){URL.revokeObjectURL(V._url);V._url=null}
+  V.hidden=true;V.innerHTML='';if(!root.firstElementChild)document.body.style.overflow=''}
+
 /* Verschlüsselte Sicherung: enthält nur den bereits verschlüsselten Tresor */
 async function exportBackup(){
   db.meta=Object.assign({},db.meta,{lastBackup:iso(T0)});
   await save();
   const v=readVault();if(!v){toast('Es gibt noch nichts zu sichern.');return}
-  const payload=JSON.stringify({app:'belegbox',format:1,exported:new Date().toISOString(),version:APP_VERSION,vault:v});
+  const files={};
+  for(const id of allDocIds()){const r=await fileGet(id).catch(()=>null);if(r)files[id]={iv:toB64(r.iv),ct:toB64(r.ct)}}
+  const payload=JSON.stringify({app:'belegbox',format:2,exported:new Date().toISOString(),version:APP_VERSION,vault:v,files});
   const ok=await deliverFile('belegbox-sicherung-'+iso(T0)+'.belegbox',payload,'application/json');
   if(ok){celebrate('Gesichert');toast('Sicherung erstellt. Leg die Datei an einem zweiten Ort ab, z. B. in deiner Cloud.');render()}
 }
 function readBackupFile(file){return new Promise((res,rej)=>{const r=new FileReader();
   r.onload=()=>{try{const o=JSON.parse(r.result);const v=o&&o.app==='belegbox'&&o.vault;
-      if(!v||typeof v.salt!=='string'||typeof v.iv!=='string'||typeof v.ct!=='string')throw new Error('format');res(v)}
+      if(!v||typeof v.salt!=='string'||typeof v.iv!=='string'||typeof v.ct!=='string')throw new Error('format');res({vault:v,files:o.files&&typeof o.files==='object'?o.files:{}})}
     catch(e){rej(new Error('Das ist keine gültige Belegbox-Sicherung.'))}};
   r.onerror=()=>rej(new Error('Die Datei konnte nicht gelesen werden.'));
-  if(file.size>40e6)return rej(new Error('Die Datei ist zu groß für eine Belegbox-Sicherung.'));
+  if(file.size>400e6)return rej(new Error('Die Datei ist zu groß für eine Belegbox-Sicherung.'));
   r.readAsText(file)})}
-function restoreVault(v){localStorage.setItem(VKEY,JSON.stringify(v));key=null;db=null;closeSheet(false);main.innerHTML='';showLock();
-  toast('Sicherung geladen. Entsperre sie mit dem Passwort, das beim Sichern galt.')}
+async function restoreVault(o){let fileErr=false;
+  try{await fileClear();for(const [id,f] of Object.entries(o.files||{}))await filePut(id,{iv:fromB64(f.iv),ct:fromB64(f.ct).buffer})}catch(x){fileErr=true}
+  localStorage.setItem(VKEY,JSON.stringify(o.vault));key=null;db=null;closeViewer();closeSheet(false);main.innerHTML='';showLock();
+  toast(fileErr?'Sicherung geladen, aber nicht alle Dokumente passten in den Speicher. Entsperre mit dem Passwort, das beim Sichern galt.':'Sicherung geladen. Entsperre sie mit dem Passwort, das beim Sichern galt.')}
 
 /* Kalenderexport (.ics) mit Erinnerung 7 Tage und 1 Tag vorher */
 function icsEsc(s){return String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\r?\n/g,'\\n')}
@@ -387,7 +494,8 @@ function upcoming(){
 /* Render */
 const main=document.getElementById('main');
 function conTile(c){return c.logo?`<div class="tile logo"><img src="${c.logo}" alt=""></div>`:`<div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>`}
-function tileFor(d){return d.foto?`<div class="tile"><img src="${d.foto}" alt=""></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
+function tileFor(d){const th=!d.foto&&(d.docs||[]).find(x=>x.thumb);if(th)return `<div class="tile"><img src="${th.thumb}" alt="" style="object-position:top"></div>`;
+  return d.foto?`<div class="tile"><img src="${d.foto}" alt=""></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
 function render(mode){
   if(!db)return;
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
@@ -539,7 +647,7 @@ function closeSheet(anim){
   sh.animate([{transform:from},{transform:'translateY(105%)'}],{duration:260,easing:'cubic-bezier(.4,0,.9,.6)',fill:'forwards'});
   setTimeout(()=>{if(tok===sheetTok)root.innerHTML=''},280);
 }
-document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(fanOpen)setFan(false);else if(root.firstElementChild)closeSheet()});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!document.getElementById('viewer').hidden)closeViewer();else if(fanOpen)setFan(false);else if(root.firstElementChild)closeSheet()});
 const head=t=>`<div class="sheethead"><h2>${t}</h2><button type="button" class="x" data-close aria-label="Schließen">✕</button></div>`;
 
 function openDetail(kind,id,from){
@@ -560,9 +668,10 @@ function openDetail(kind,id,from){
         <dt>Herstellergarantie</dt><dd>${i.gar?'bis '+fmtD(i.gar)+(days(i.gar)<0?' <span class="pill p-none">abgelaufen</span>':''):'keine'}</dd>
         <dt>Nachweis</dt><dd>${NACHWEIS[d.nachweis]||'–'}</dd>
       </dl>
+      ${docSection(d)}
       <div class="actions"><button type="button" class="btn primary" id="edit">Bearbeiten</button><button type="button" class="btn danger" id="del">Löschen</button></div>`,
-      s=>{const pr=s.querySelector('.prot');if(pr&&motion())pr.classList.add('enter');
-          s.querySelector('#edit').onclick=()=>openForm('d',d);armDelete(s,()=>{db.devices=db.devices.filter(x=>x.id!==id)})},from);
+      s=>{const pr=s.querySelector('.prot');if(pr&&motion())pr.classList.add('enter');bindDocs(s,d);
+          s.querySelector('#edit').onclick=()=>openForm('d',d);armDelete(s,()=>{(d.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.devices=db.devices.filter(x=>x.id!==id)})},from);
   } else {
     const c=db.contracts.find(x=>x.id===id); if(!c)return; const i=contractInfo(c);
     openSheet(head((c.logo?`<img class="hlogo" src="${c.logo}" alt="">`:'')+esc(c.anbieter))+`<div style="margin:-6px 0 14px">${conPill(c)}</div>
@@ -578,12 +687,13 @@ function openDetail(kind,id,from){
         ${i.by?`<dt>Spätestens kündigen</dt><dd><b>${fmtD(i.by)}</b> (${inDays(days(i.by))})</dd>`:''}
         ${[['kundennr','Kundennummer'],['vertragsnr','Vertragsnummer']].map(([f,l])=>`<dt>${l}</dt><dd class="num">${c[f]?`<span data-mask="${f}">${esc(maskVal(c[f]))}</span><button type="button" class="reveal" data-show="${f}">Anzeigen</button><button type="button" class="reveal" data-copy="${f}">Kopieren</button>`:'–'}</dd>`).join('')}
       </dl>
+      ${docSection(c)}
       <div class="actions">
         <button type="button" class="btn primary" id="edit">Bearbeiten</button>
         ${c.status!=='gekuendigt'?'<button type="button" class="btn" id="cancel">Als gekündigt markieren</button>':'<button type="button" class="btn" id="cancel">Wieder aktiv</button>'}
         <button type="button" class="btn" id="dup">Kopie anlegen</button>
         <button type="button" class="btn danger" id="del">Löschen</button></div>`,
-      s=>{s.querySelectorAll('[data-show]').forEach(b=>{const f=b.dataset.show,sp=s.querySelector(`[data-mask="${f}"]`);let open=false;
+      s=>{bindDocs(s,c);s.querySelectorAll('[data-show]').forEach(b=>{const f=b.dataset.show,sp=s.querySelector(`[data-mask="${f}"]`);let open=false;
             b.onclick=()=>{open=!open;sp.textContent=open?c[f]:maskVal(c[f]);b.textContent=open?'Verbergen':'Anzeigen'}});
           s.querySelectorAll('[data-copy]').forEach(b=>b.onclick=async()=>{const f=b.dataset.copy;
             try{await navigator.clipboard.writeText(c[f]);buzz(8);toast((f==='kundennr'?'Kundennummer':'Vertragsnummer')+' kopiert.')}
@@ -593,7 +703,7 @@ function openDetail(kind,id,from){
           s.querySelector('#cancel').onclick=()=>{const was=c.status==='gekuendigt';c.status=was?'aktiv':'gekuendigt';if(was)delete c.gekuendigtAm;else c.gekuendigtAm=iso(T0);save();render();openDetail('c',id);
             if(was){buzz(8);toast('Wieder als aktiv markiert.')}
             else{celebrate('Gekündigt');toast(`Stark! Ab dem ${fmtD(contractInfo(c).end)} sparst du ${eur(monthly(c)*12)} im Jahr.`)}};
-          armDelete(s,()=>{db.contracts=db.contracts.filter(x=>x.id!==id)})},from);
+          armDelete(s,()=>{(c.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.contracts=db.contracts.filter(x=>x.id!==id)})},from);
   }
 }
 function armDelete(s,fn){const b=s.querySelector('#del');let armed=false;
@@ -630,6 +740,7 @@ function openForm(kind,item,camera,tpl){
     <label class="field"><span>Kaufnachweis</span><select id="f_nach">${Object.entries(NACHWEIS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
     <label class="field"><span>${item&&item.foto?'Foto ersetzen':'Foto von Beleg oder Typenschild'}</span><input id="f_foto" type="file" accept="image/*"></label>
     ${item&&item.foto?'<label class="check"><input id="f_fotoDel" type="checkbox"> Vorhandenes Foto entfernen</label>':''}
+    ${DOCFIELD}
     <p class="hint">Bei Kontoauszügen vorher alles außer der Buchung schwärzen. Die gesetzliche Gewährleistung von 2 Jahren ab Kauf wird automatisch berechnet.</p>`;
   const con=`
     <label class="field"><span>Anbieter *</span><input id="c_anb" required placeholder="z. B. Spotify"></label>
@@ -652,7 +763,8 @@ function openForm(kind,item,camera,tpl){
     <p class="hint" data-m="beginn">Trag immer den <b>ursprünglichen</b> Vertragsbeginn ein, auch wenn der Vertrag schon verlängert wurde. Die App rechnet die Verlängerungen selbst weiter.</p>
     <div class="prev" id="c_prev" aria-live="polite"></div>
     <div class="note" id="c_law" hidden>Verträge, die ab dem 1. März 2022 geschlossen wurden, verlängern sich nach der Mindestlaufzeit meist nur noch auf unbestimmte Zeit und sind dann monatlich kündbar (1 Monat Frist). Prüf kurz deine Unterlagen.
-      <button type="button" class="linkbtn" id="c_lawGo" style="display:block;padding-top:6px;color:var(--warn)">Als „unbefristet, 1 Monat Frist“ übernehmen</button></div>`;
+      <button type="button" class="linkbtn" id="c_lawGo" style="display:block;padding-top:6px;color:var(--warn)">Als „unbefristet, 1 Monat Frist“ übernehmen</button></div>
+    ${DOCFIELD}`;
   openSheet(head(item?'Bearbeiten':tpl?'Vertrag kopieren':'Neuer Eintrag')+`<form id="frm" novalidate>
     ${tpl?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
     <div class="seg"${item||tpl?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
@@ -660,6 +772,7 @@ function openForm(kind,item,camera,tpl){
     <div class="actions"><button type="submit" class="btn primary">Speichern</button><button type="button" class="btn" data-close>Abbrechen</button></div></form>`,
   s=>{
     let logoVal=src0&&src0.logo?src0.logo:undefined;
+    const D=docEditor(s,item&&item.docs?item.docs.slice():[]); // Kopien übernehmen keine Dateien
     s.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>openForm(b.dataset.k));
     const v=id=>s.querySelector('#'+id).value.trim();
     const src=item||tpl;
@@ -675,6 +788,8 @@ function openForm(kind,item,camera,tpl){
         if(item){if(item.beginn)set('c_beg',item.beginn);set('c_vnr',item.vertragsnr||'')}}
     }
     s.querySelector('#frm').addEventListener('submit',async e=>{e.preventDefault();const err=s.querySelector('#err');let first=false;
+      const commitDocs=async()=>{if(D.busy()){err.textContent='Eine Datei wird noch gelesen. Einen Moment …';err.hidden=false;return false}
+        try{await D.commit();return true}catch(x){err.textContent='Die Datei konnte nicht gespeichert werden. Vermutlich ist der Speicher voll.';err.hidden=false;return false}};
       if([...s.querySelectorAll('input:not([type])')].some(i=>looksBanky(i.value))){
         err.textContent='Ein Feld sieht nach einer IBAN oder Kartennummer aus. Solche Nummern speichert die Belegbox bewusst nicht. Trag höchstens die letzten vier Ziffern ein.';err.hidden=false;return}
       if(kind==='d'){
@@ -682,9 +797,10 @@ function openForm(kind,item,camera,tpl){
         let foto=item&&item.foto||'';const f=s.querySelector('#f_foto').files[0];
         const fd=s.querySelector('#f_fotoDel');if(fd&&fd.checked)foto='';
         if(f){try{foto=await shrink(f)}catch(x){err.textContent='Das Foto konnte nicht gelesen werden. Versuch es mit einem JPG oder PNG.';err.hidden=false;return}}
+        if(!await commitDocs())return;
         const dd={name:v('f_name'),kategorie:v('f_kat'),raum:v('f_raum'),hersteller:v('f_her'),modell:v('f_mod'),sn:v('f_sn'),
           kauf:v('f_kauf'),geschaetzt:s.querySelector('#f_ges').checked,preis:parseFloat(v('f_preis'))||0,haendler:v('f_hae'),
-          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto};
+          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs};
         if(item){Object.assign(item,dd);delete item.ex}else{first=!db.devices.some(x=>!x.ex);db.devices.push(Object.assign({id:uid()},dd))}
         tab='geraete';
       } else {
@@ -692,15 +808,16 @@ function openForm(kind,item,camera,tpl){
         if(!v('c_anb')||!v('c_kost')){err.textContent='Bitte Anbieter und Kosten ausfüllen.';err.hidden=false;return}
         if(md==='beginn'&&!v('c_beg')){err.textContent='Bitte den Vertragsbeginn ausfüllen.';err.hidden=false;return}
         if(md==='ende'&&!v('c_end')){err.textContent='Bitte das aktuelle Laufzeitende ausfüllen.';err.hidden=false;return}
+        if(!await commitDocs())return;
         let logo=logoVal;
         if(logo===undefined){ // gleicher Anbieter hat schon ein Logo? Dann übernehmen
           const twin=db.contracts.find(x=>x!==item&&x.logo&&x.anbieter.trim().toLowerCase()===v('c_anb').toLowerCase());logo=twin?twin.logo:''}
         const cc={logo,anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')===''?null:(parseFloat(v('c_kn'))||0),
-          intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr'))};
+          intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),docs:D.docs};
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
       }
-      filter='alle';save();closeSheet();render(item?undefined:'rows');
+      filter='alle';save();D.cleanup();closeSheet();render(item?undefined:'rows');
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
@@ -760,7 +877,7 @@ function openMenu(){
     <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
     <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="icsGo">Fristen in Kalender exportieren</button></div>
     <div class="label" style="margin-bottom:8px">Sicherung</div>
-    <p class="hint" style="margin-bottom:10px">Die Sicherung ist mit deinem aktuellen Passwort verschlüsselt. ${db.meta&&db.meta.lastBackup?'Letzte Sicherung: '+fmtD(parse(db.meta.lastBackup))+'.':'Bisher keine Sicherung.'}</p>
+    <p class="hint" style="margin-bottom:10px">Die Sicherung ist mit deinem aktuellen Passwort verschlüsselt und enthält auch alle PDFs und Dokumente. ${db.meta&&db.meta.lastBackup?'Letzte Sicherung: '+fmtD(parse(db.meta.lastBackup))+'.':'Bisher keine Sicherung.'}</p>
     <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="bkGo">Sicherung erstellen</button>
       <label class="btn" style="cursor:pointer">Sicherung laden<input id="bkIn" type="file" accept=".belegbox,application/json" hidden></label></div>
     <p class="hint" id="bkMsg" hidden></p>
@@ -793,7 +910,7 @@ function openMenu(){
      s.querySelector('#bkNo').onclick=()=>{pending=null;cf.hidden=true};
      s.querySelector('#bkYes').onclick=()=>{if(pending)saving.then(()=>restoreVault(pending))};
      s.querySelector('#m_ex').onclick=()=>{const sm=samples();db.devices=db.devices.filter(x=>!x.ex).concat(sm.devices);db.contracts=db.contracts.filter(x=>!x.ex).concat(sm.contracts);save();closeSheet();render('rise')};
-     armDelete(s,()=>{db={devices:[],contracts:[]}})});
+     armDelete(s,()=>{db={devices:[],contracts:[]};fileClear().catch(()=>{})})});
 }
 
 /* ---------- Tabs: Antippen oder Wischen ---------- */
