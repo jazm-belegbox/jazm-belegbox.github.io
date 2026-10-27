@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.3.0';
+const APP_VERSION='0.6.4.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
