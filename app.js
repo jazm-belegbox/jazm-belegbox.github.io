@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.4.0';
+const APP_VERSION='0.6.5.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -303,6 +303,7 @@ const VAULT='<div class="vault" aria-hidden="true"><div class="door"><svg viewBo
   +'</g></svg></div></div>';
 const SHIELD='<svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 let lockTok=0;
+let autoBioNext=true,bioPrompt=null;
 function showLock(closing){
   const tok=++lockTok;
   document.body.classList.add('locked');
@@ -372,12 +373,18 @@ function showLock(closing){
     },640);
   }
   const lb=L.querySelector('#lbio');
-  if(lb)lb.onclick=async()=>{err.hidden=true;lb.disabled=true;
+  const tryBio=async auto=>{if(!lb||lb.disabled||!lb.isConnected)return;err.hidden=true;lb.disabled=true;
     try{await unlockBio();opened()}
     catch(x){lb.disabled=false;
-      if(x&&x.name==='NotAllowedError'){err.textContent='Abgebrochen. Tippe erneut oder nutze dein Passwort.'}
+      if(x&&x.name==='NotAllowedError'){if(auto)return;err.textContent='Abgebrochen. Tippe erneut oder nutze dein Passwort.'}
       else{err.textContent='Entsperren per Fingerabdruck hat nicht geklappt. Bitte nutze dein Passwort.';shake()}
       err.hidden=false}};
+  if(lb){lb.onclick=()=>tryBio(false);
+    // Beim Öffnen der App bzw. Zurückholen aus dem Hintergrund sofort nach dem Fingerabdruck fragen
+    bioPrompt=()=>{if(!document.hidden&&!key)setTimeout(()=>tryBio(true),closing?0:350)};
+    if(autoBioNext&&!closing){autoBioNext=false;bioPrompt()}}
+  else bioPrompt=null;
+  autoBioNext=false;
   const lr=L.querySelector('#lraw');if(lr)lr.onclick=()=>{let r='';try{r=localStorage.getItem(VKEY)||''}catch(e){}deliverFile('belegbox-tresor-beschaedigt.txt',r,'text/plain')};
   const gho=L.querySelector('#lghOpen');
   if(gho){gho.onclick=()=>{const b=L.querySelector('#lgh');b.hidden=!b.hidden;if(!b.hidden)L.querySelector('#lgo_t').focus()};
@@ -567,7 +574,9 @@ async function askPersist(){try{if(navigator.storage&&navigator.storage.persist)
 let lastAct=Date.now(),hiddenAt=0;
 ['pointerdown','keydown','scroll','touchstart'].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now()},{passive:true}));
 setInterval(()=>{if(key&&Date.now()-lastAct>IDLE_MS)lock()},10000);
-document.addEventListener('visibilitychange',()=>{if(document.hidden)hiddenAt=Date.now();else if(key&&hiddenAt&&Date.now()-hiddenAt>BG_MS)lock()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){hiddenAt=Date.now();return}
+  if(key&&hiddenAt&&Date.now()-hiddenAt>BG_MS){autoBioNext=true;lock()}
+  else if(!key&&bioPrompt)bioPrompt()});
 
 /* Berechnungen */
 /* Laufzeit-Modus: 'beginn' = aus Vertragsbeginn + Mindestlaufzeit, 'ende' = bekanntes Laufzeitende, 'offen' = unbefristet */
