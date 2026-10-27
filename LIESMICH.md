@@ -1,6 +1,6 @@
-# Belegbox – Test-App 0.5.3.0
+# Belegbox – Test-App 0.6.0.0
 
-Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server und keine Verbindung zu fremden Diensten.
+Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
 
 ## Gesten & Bewegung (ab 0.4)
 
@@ -42,6 +42,12 @@ Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem P
 - IBANs und Kartennummern werden beim Speichern abgelehnt.
 - Content-Security-Policy erlaubt nur Dateien von der eigenen Adresse, keine externen Skripte, Schriften oder Verbindungen.
 - **Kein Passwort-Reset möglich.** Passwort vergessen = Daten weg (außer du hast es im Passwortmanager).
+
+## Automatische Sicherung (GitHub)
+
+Daten → „Automatische Sicherung (GitHub)“: Konto, privates Repo und einen Fine-grained-Zugangsschlüssel (nur dieses Repo, „Contents: Read and write“) eintragen. Danach landen nach jeder Änderung `vault.json` (der verschlüsselte Tresor) und `files/<id>.bin` (verschlüsselte Dokumente) im Repo. Jede Sicherung ist ein Commit, ältere Stände bleiben in der Versionsgeschichte. Öffentliche Repos werden abgelehnt, ein fremder Tresor im Repo wird nie automatisch überschrieben, und im Repo wird nichts gelöscht.
+
+Wiederherstellen: auf „Tresor einrichten“ → „Aus GitHub wiederherstellen“, Zugangsschlüssel eingeben, dann mit dem Passwort entsperren.
 
 ## Sicherung
 

@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.5.3.0';
+const APP_VERSION='0.6.0.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -73,6 +73,88 @@ async function persist(){
   try{await filePut(MIRROR,json)}catch(e){}
   localStorage.setItem(VKEY,json);
 }
+/* ---------- Automatische Sicherung in ein privates GitHub-Repo ----------
+   Hochgeladen wird nur bereits Verschlüsseltes: vault.json (= Tresor wie im Browser) und files/<id>.bin (IV + Chiffretext).
+   Zugangsdaten liegen verschlüsselt im Tresor (db.meta.gh). Im Repo wird nie automatisch etwas gelöscht. */
+const GH_API='https://api.github.com',GH_LS='belegbox-gh-status';
+let ghTimer=0,ghBusy=false,ghAgain=null,ghPending=null;
+let ghStat=(()=>{try{return JSON.parse(localStorage.getItem(GH_LS))||{}}catch(e){return {}}})();
+function setGhStat(o){const prev=ghStat.err||'';ghStat=Object.assign({},ghStat,o);try{localStorage.setItem(GH_LS,JSON.stringify(ghStat))}catch(e){}
+  const el=document.getElementById('ghStatus');if(el)el.innerHTML=ghStatusText();if(db&&!root.firstElementChild&&o.err!==undefined&&(o.err||'')!==prev)render()}
+function ghCfg(){const g=db&&db.meta&&db.meta.gh;return g&&g.token&&g.owner&&g.repo?Object.assign({},g):null}
+async function ghFetch(g,method,path,body,raw){
+  const r=await fetch(`${GH_API}/repos/${encodeURIComponent(g.owner)}/${encodeURIComponent(g.repo)}${path}`,{method,cache:'no-store',
+    headers:Object.assign({Authorization:'Bearer '+g.token,Accept:raw?'application/vnd.github.raw+json':'application/vnd.github+json'},body?{'Content-Type':'application/json'}:{}),
+    body:body?JSON.stringify(body):undefined});
+  if(r.status===404&&method==='GET')return null;
+  if(!r.ok){const e=new Error('GitHub '+r.status);e.status=r.status;throw e}
+  return raw?r.arrayBuffer():r.status===204?null:r.json();
+}
+const ghErrText=e=>e&&e.conflict?'Im Repo liegt ein anderer Tresor. Öffne „Daten“, um zu entscheiden.'
+  :e&&e.status===401?'Der GitHub-Zugangsschlüssel ist ungültig oder abgelaufen.'
+  :e&&(e.status===403||e.status===404)?'Kein Zugriff auf das Repo. Prüfe Name und Rechte des Schlüssels (Contents: Read and write).'
+  :e&&e.status===422?'GitHub hat die Datei abgelehnt (zu groß?).'
+  :'Keine Verbindung zu GitHub. Es wird später erneut versucht.';
+function ghStatusText(){
+  if(ghBusy)return '<span class="spin"></span> Wird gesichert …';
+  if(ghStat.err)return `<span style="color:var(--crit)">${esc(ghStat.err)}</span>`;
+  if(ghStat.at){const m=Math.round((Date.now()-ghStat.at)/60000);return `Zuletzt gesichert ${m<1?'gerade eben':m<60?'vor '+m+' Min.':m<1440?'vor '+Math.round(m/60)+' Std.':'am '+fmtD(new Date(ghStat.at))}.`}
+  return 'Noch nicht gesichert.';
+}
+async function ghRemoteVault(g){
+  const cur=await ghFetch(g,'GET','/contents/vault.json');if(!cur)return {cur:null,json:null};
+  let json=null;
+  try{json=cur.content&&cur.encoding==='base64'?td.decode(fromB64(cur.content.replace(/\s/g,''))):td.decode(new Uint8Array(await ghFetch(g,'GET','/contents/vault.json',null,true)))}catch(e){}
+  return {cur,json};
+}
+function ghQueue(delay){const g=ghCfg();if(!g)return;ghPending=g;clearTimeout(ghTimer);ghTimer=setTimeout(()=>ghSync(),delay==null?4000:delay)}
+async function ghSync(force){
+  const g=ghPending||ghCfg();if(!g)return;
+  if(ghBusy){ghAgain={force};return}
+  ghBusy=true;clearTimeout(ghTimer);ghPending=null;setGhStat({});
+  try{
+    let local=null;try{local=localStorage.getItem(VKEY)}catch(e){}
+    if(!local||!vaultOk(local))throw new Error('local');
+    const lv=JSON.parse(local);
+    // 1) Belege/Dokumente, die im Repo noch fehlen (Dateien ändern sich nie, daher reicht der Name)
+    const ids=allDocIds();
+    if(ids.length){
+      const list=await ghFetch(g,'GET','/contents/files');const have=new Set((list||[]).map(x=>String(x.name).replace(/\.bin$/,'')));
+      for(const id of ids){if(have.has(id))continue;const f=await fileGet(id).catch(()=>null);if(!f)continue;
+        const u=new Uint8Array(12+f.ct.byteLength);u.set(new Uint8Array(f.iv),0);u.set(new Uint8Array(f.ct),12);
+        await ghFetch(g,'PUT',`/contents/files/${id}.bin`,{message:'Belegbox: Dokument',content:toB64(u)})}
+    }
+    // 2) Tresor – aber nie einen fremden Tresor überschreiben
+    for(let attempt=0;attempt<2;attempt++){
+      const {cur,json}=await ghRemoteVault(g);
+      if(json===local)break;
+      if(cur&&!force){let rv=null;try{rv=JSON.parse(json)}catch(e){}
+        if(!rv||(rv.vid!==lv.vid)){const e=new Error('conflict');e.conflict=true;throw e}}
+      try{await ghFetch(g,'PUT','/contents/vault.json',{message:'Belegbox-Sicherung '+new Date().toLocaleString('de-DE'),content:toB64(te.encode(local)),sha:cur?cur.sha:undefined});break}
+      catch(e){if(e.status!==409||attempt)throw e}
+    }
+    setGhStat({at:Date.now(),err:'',conflict:false});
+  }catch(e){
+    if(e.message==='local'){ghBusy=false;return}
+    setGhStat({err:ghErrText(e),conflict:!!e.conflict});
+    if(!e.conflict&&!(e.status>=400&&e.status<500))setTimeout(()=>ghQueue(0),5*60e3); // Netzwerkfehler: später nochmal
+  }finally{
+    ghBusy=false;const el=document.getElementById('ghStatus');if(el)el.innerHTML=ghStatusText();
+    if(ghAgain){const a=ghAgain;ghAgain=null;ghSync(a.force)}
+  }
+}
+// Beim Wegwechseln aus der App ausstehende Sicherung sofort starten
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&ghTimer&&ghPending)ghSync()});
+/* Wiederherstellen aus GitHub (ohne entsperrten Tresor) */
+async function ghRestore(g,onStep){
+  const {json}=await ghRemoteVault(g);if(!json||!vaultOk(json))throw new Error('Im Repo wurde keine Belegbox-Sicherung gefunden.');
+  const files={},list=await ghFetch(g,'GET','/contents/files')||[];let n=0;
+  for(const it of list){if(!/\.bin$/.test(it.name))continue;onStep&&onStep(++n,list.length);
+    const b=new Uint8Array(await ghFetch(g,'GET','/contents/files/'+encodeURIComponent(it.name),null,true));
+    files[it.name.replace(/\.bin$/,'')]={iv:toB64(b.slice(0,12)),ct:toB64(b.slice(12))}}
+  return {vault:JSON.parse(json),files};
+}
+
 /* Zweitkopie des verschlüsselten Tresors + Start-Prüfung */
 const MIRROR='__vault__';
 let bootInfo={orphans:0,broken:false};
@@ -94,12 +176,12 @@ async function boot(){
   showLock();
 }
 let saving=Promise.resolve();
-function save(){saving=saving.then(persist).catch(()=>toast('Speichern fehlgeschlagen. Der Speicher ist vermutlich voll: Entferne ein paar Fotos.'));return saving}
+function save(){saving=saving.then(persist).then(()=>ghQueue()).catch(()=>toast('Speichern fehlgeschlagen. Der Speicher ist vermutlich voll: Entferne ein paar Fotos.'));return saving}
 async function openWithDek(raw,v){
   const k=await importDek(raw);
   const pt=await open_(k,v);
   db=JSON.parse(td.decode(pt));key=k;dekRaw=raw;
-  vmeta={iter:v.iter,salt:v.salt,wrapPw:v.wrapPw,bio:v.bio||null};
+  vmeta={iter:v.iter,salt:v.salt,wrapPw:v.wrapPw,bio:v.bio||null,vid:v.vid||toB64(rnd(12))};
 }
 async function unlock(pw){
   const v=readVault();const salt=fromB64(v.salt);
@@ -108,13 +190,13 @@ async function unlock(pw){
   // Format 1 (bis 0.2.0.2): direkt mit dem Passwortschlüssel verschlüsselt → auf Format 2 umstellen
   const pt=await open_(kek,v);db=JSON.parse(td.decode(pt));
   dekRaw=rnd(32);key=await importDek(dekRaw);
-  vmeta={iter:v.iter||ITER,salt:v.salt,wrapPw:await seal(kek,dekRaw),bio:null};
+  vmeta={iter:v.iter||ITER,salt:v.salt,wrapPw:await seal(kek,dekRaw),bio:null,vid:toB64(rnd(12))};
   await save();
 }
 async function createVault(pw,withEx){
   const salt=rnd(16);const kek=await deriveKey(pw,salt,ITER);
   dekRaw=rnd(32);key=await importDek(dekRaw);
-  vmeta={iter:ITER,salt:toB64(salt),wrapPw:await seal(kek,dekRaw),bio:null};
+  vmeta={iter:ITER,salt:toB64(salt),wrapPw:await seal(kek,dekRaw),bio:null,vid:toB64(rnd(12))};
   let old=null;try{old=JSON.parse(localStorage.getItem(KEY))}catch(e){}
   db=old&&Array.isArray(old.devices)?old:withEx?samples():{devices:[],contracts:[]};
   await persist();
@@ -244,7 +326,15 @@ function showLock(closing){
       <label class="field"><span>Passwort</span><input id="lp1" type="password" autocomplete="current-password"></label>`}
     <p class="hint" id="lerr" style="color:var(--crit)" hidden></p>
     <button type="submit" class="btn${bio?'':' primary'}" id="lgo">${setup?'Tresor anlegen':'Entsperren'}</button>
-    ${setup?'<label class="linkbtn" style="cursor:pointer">Neues Handy? Sicherung wiederherstellen<input id="lrestore" type="file" accept=".belegbox,application/json" hidden></label>'
+    ${setup?`<label class="linkbtn" style="cursor:pointer">Neues Handy? Sicherung wiederherstellen<input id="lrestore" type="file" accept=".belegbox,application/json" hidden></label>
+      <button type="button" class="linkbtn" id="lghOpen">Aus GitHub wiederherstellen</button>
+      <div class="ghbox" id="lgh" hidden>
+        <div class="label">Wiederherstellen aus GitHub</div>
+        <div class="grid2"><label class="field"><span>Konto / Organisation</span><input id="lgo_o" value="jazm-belegbox" autocomplete="off" autocapitalize="off"></label>
+          <label class="field"><span>Repo</span><input id="lgo_r" value="belegbox-daten" autocomplete="off" autocapitalize="off"></label></div>
+        <label class="field"><span>Zugangsschlüssel (github_pat_…)</span><input id="lgo_t" type="password" autocomplete="off"></label>
+        <p class="hint" id="lgo_msg" hidden></p>
+        <button type="button" class="btn primary" id="lgo_go">Sicherung von GitHub laden</button></div>`
       :'<button type="button" class="linkbtn" id="lreset">Passwort vergessen? Tresor zurücksetzen</button>'}
     <p class="hint" style="text-align:center">Version ${APP_VERSION}</p>
   </form></div>`;
@@ -271,7 +361,7 @@ function showLock(closing){
   // Entsperrt: Rad dreht, Tür schwingt auf, App kommt dahinter hervor
   function opened(){
     V.classList.remove('busy');
-    document.body.classList.remove('locked');lastAct=Date.now();tab='home';filter='alle';shown={};askPersist();buzz([10,40,18]);setTimeout(cleanFiles,5000);
+    document.body.classList.remove('locked');lastAct=Date.now();tab='home';filter='alle';shown={};askPersist();buzz([10,40,18]);setTimeout(cleanFiles,5000);setTimeout(()=>ghQueue(0),3000);
     if(!motion()){L.innerHTML='';render('rise');return}
     L.classList.add('leaving');V.classList.add('open');
     setTimeout(()=>{if(tok!==lockTok||!db)return;
@@ -289,6 +379,14 @@ function showLock(closing){
       else{err.textContent='Entsperren per Fingerabdruck hat nicht geklappt. Bitte nutze dein Passwort.';shake()}
       err.hidden=false}};
   const lr=L.querySelector('#lraw');if(lr)lr.onclick=()=>{let r='';try{r=localStorage.getItem(VKEY)||''}catch(e){}deliverFile('belegbox-tresor-beschaedigt.txt',r,'text/plain')};
+  const gho=L.querySelector('#lghOpen');
+  if(gho){gho.onclick=()=>{const b=L.querySelector('#lgh');b.hidden=!b.hidden;if(!b.hidden)L.querySelector('#lgo_t').focus()};
+    L.querySelector('#lgo_go').onclick=async()=>{const m=L.querySelector('#lgo_msg'),bt=L.querySelector('#lgo_go');
+      const g={owner:L.querySelector('#lgo_o').value.trim(),repo:L.querySelector('#lgo_r').value.trim(),token:L.querySelector('#lgo_t').value.trim()};
+      if(!g.owner||!g.repo||!g.token){m.textContent='Bitte alle drei Felder ausfüllen.';m.style.color='var(--crit)';m.hidden=false;return}
+      bt.disabled=true;m.style.color='';m.hidden=false;m.textContent='Lade Tresor …';V.classList.add('busy');
+      try{const o=await ghRestore(g,(i,n)=>{m.textContent=`Lade Dokumente … ${i} von ${n}`});V.classList.remove('busy');await restoreVault(o)}
+      catch(x){V.classList.remove('busy');bt.disabled=false;m.style.color='var(--crit)';m.textContent=x&&x.status?ghErrText(x):(x&&x.message||'Das hat nicht geklappt.');shake()}}}
   const rf=L.querySelector('#lrestore');
   if(rf)rf.addEventListener('change',async()=>{const file=rf.files[0];if(!file)return;
     try{restoreVault(await readBackupFile(file))}catch(x){fail(x.message)}});
@@ -552,7 +650,10 @@ function render(mode){
   const own=db.devices.some(x=>!x.ex)||db.contracts.some(x=>!x.ex);
   const lb=db.meta&&db.meta.lastBackup?parse(db.meta.lastBackup):null;
   const dirty=db.meta&&db.meta.dirty||0;
-  if(own&&(!lb||days(lb)<-14||dirty>=5)){
+  const ghOn=!!ghCfg(),ghOk=ghOn&&!ghStat.err&&ghStat.at;
+  if(ghOn&&ghStat.err){document.getElementById('banner').insertAdjacentHTML('beforeend',`<div class="banner" style="background:var(--crit-soft)"><span><b>GitHub-Sicherung:</b> ${esc(ghStat.err)}</span><button type="button" id="ghFix" style="color:var(--crit)">Ansehen</button></div>`);
+    document.getElementById('ghFix').onclick=openMenu}
+  if(own&&!ghOk&&(!lb||days(lb)<-14||dirty>=5)){
     document.getElementById('banner').insertAdjacentHTML('beforeend',`<div class="banner" style="background:var(--warn-soft)"><span>${!lb?'Du hast noch keine Sicherung.':dirty>=5?dirty+' Änderungen seit der letzten Sicherung.':'Letzte Sicherung vor '+(-days(lb))+' Tagen.'} Ohne Sicherung sind bei Handyverlust, Browserwechsel oder gelöschten Websitedaten alle Daten weg.</span><button type="button" id="bkNow" style="color:var(--warn)">Jetzt sichern</button></div>`);
     document.getElementById('bkNow').onclick=exportBackup;
   }
@@ -954,7 +1055,7 @@ function openMenu(){
   openSheet(head('Daten & Sicherheit')+`
     <div class="secline"><svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
       Verschlüsselt mit AES-256${vmeta&&vmeta.bio?' · Fingerabdruck an':''} · sperrt nach 5 Min. ohne Eingabe oder 1 Min. im Hintergrund</div>
-    <p class="hint" style="margin-bottom:14px">Deine Daten liegen nur verschlüsselt in diesem Browser und werden nirgendwohin gesendet. Dein Passwort wird nicht gespeichert.</p>
+    <p class="hint" style="margin-bottom:14px">${ghCfg()?'Deine Daten liegen verschlüsselt in diesem Browser und als verschlüsselte Sicherung in deinem privaten GitHub-Repo. Sonst wird nichts gesendet.':'Deine Daten liegen nur verschlüsselt in diesem Browser und werden nirgendwohin gesendet.'} Dein Passwort wird nicht gespeichert.</p>
     <form id="pwf" novalidate style="margin-bottom:18px">
       <div class="label">Passwort ändern</div>
       <label class="field"><span>Aktuelles Passwort</span><input id="pw0" type="password" autocomplete="current-password"></label>
@@ -967,6 +1068,18 @@ function openMenu(){
     <p class="hint" style="margin-bottom:10px">${vmeta&&vmeta.bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die Belegbox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „Belegbox“ in deinem Passwortmanager angelegt.'}</p>
     <div class="actions" style="margin-bottom:6px"><button type="button" class="btn${vmeta&&vmeta.bio?'':' primary'}" id="bioBtn">${vmeta&&vmeta.bio?'Ausschalten':'Einschalten'}</button></div>
     <p class="hint" id="bioMsg" hidden></p><div style="height:12px"></div>`:''}
+    <div class="label" style="margin-bottom:8px">Automatische Sicherung (GitHub)</div>
+    ${ghCfg()?`<p class="hint" style="margin-bottom:6px">Nach jeder Änderung landet der verschlüsselte Tresor in <b>${esc(db.meta.gh.owner)}/${esc(db.meta.gh.repo)}</b>. GitHub sieht nur verschlüsselte Daten.</p>
+      <p class="hint" id="ghStatus" style="margin-bottom:10px;display:flex;gap:8px;align-items:center">${ghStatusText()}</p>
+      ${ghStat.conflict?`<div class="note" style="background:var(--crit-soft);margin-bottom:10px">Im Repo liegt ein anderer Tresor (z. B. von einem früheren Gerät). Er bleibt in der Versionsgeschichte von GitHub erhalten, wenn du ihn ersetzt.
+        <div class="actions" style="margin-top:8px"><button type="button" class="btn primary" id="ghPull">Stattdessen den GitHub-Stand laden</button><button type="button" class="btn danger" id="ghForce">Durch diesen Tresor ersetzen</button></div></div>`:''}
+      <div class="actions" style="margin-bottom:18px"><button type="button" class="btn primary" id="ghNow">Jetzt sichern</button><button type="button" class="btn" id="ghOff">Trennen</button></div>`
+    :`<p class="hint" style="margin-bottom:10px">Sichert den verschlüsselten Tresor und alle Dokumente nach jeder Änderung in ein <b>privates</b> GitHub-Repo – auch wenn Browserdaten gelöscht werden, bleibt alles erhalten.</p>
+      <div class="grid2"><label class="field"><span>Konto / Organisation</span><input id="gh_o" value="jazm-belegbox" autocomplete="off" autocapitalize="off"></label>
+        <label class="field"><span>Repo</span><input id="gh_r" value="belegbox-daten" autocomplete="off" autocapitalize="off"></label></div>
+      <label class="field" style="margin-top:12px"><span>Zugangsschlüssel (github_pat_…)</span><input id="gh_t" type="password" autocomplete="off"></label>
+      <p class="hint" id="gh_msg" hidden></p>
+      <div class="actions" style="margin:10px 0 18px"><button type="button" class="btn primary" id="gh_go">Verbinden & sichern</button></div>`}
     <div class="label" style="margin-bottom:8px">Kalender</div>
     <p class="hint" style="margin-bottom:10px">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
     <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
@@ -995,6 +1108,27 @@ function openMenu(){
             else{await enableBio();closeSheet();celebrate('Fingerabdruck an');toast('Fingerabdruck eingeschaltet. Probier es gleich mit „Sperren“ aus.')} }
        catch(x){bb.disabled=false;m.textContent=x&&x.name==='NotAllowedError'?'Abgebrochen.':(x&&x.name==='InvalidStateError'?'Für dieses Gerät gibt es schon einen Belegbox-Passkey. Lösche ihn im Passwortmanager und versuch es erneut.':(x&&x.message)||'Das hat nicht geklappt.');
          m.style.color='var(--crit)';m.hidden=false}};
+     const ghGo=s.querySelector('#gh_go');
+     if(ghGo)ghGo.onclick=async()=>{const m=s.querySelector('#gh_msg');
+       const g={owner:s.querySelector('#gh_o').value.trim(),repo:s.querySelector('#gh_r').value.trim(),token:s.querySelector('#gh_t').value.trim()};
+       const say=(t,bad)=>{m.textContent=t;m.style.color=bad?'var(--crit)':'';m.hidden=false};
+       if(!g.owner||!g.repo||!g.token)return say('Bitte alle drei Felder ausfüllen.',true);
+       ghGo.disabled=true;say('Prüfe Zugang …');
+       try{const info=await ghFetch(g,'GET','');
+         if(!info)throw Object.assign(new Error(),{status:404});
+         if(!info.private){ghGo.disabled=false;return say('Dieses Repo ist öffentlich. Aus Sicherheitsgründen sichert die Belegbox nur in private Repos.',true)}
+         if(info.permissions&&info.permissions.push===false){ghGo.disabled=false;return say('Der Schlüssel darf in dieses Repo nicht schreiben. Setze „Contents“ auf „Read and write“.',true)}
+       }catch(x){ghGo.disabled=false;return say(ghErrText(x),true)}
+       db.meta=Object.assign({},db.meta,{gh:g});setGhStat({err:'',at:0,conflict:false});await save();
+       openMenu();ghSync().then(()=>{if(!ghStat.err){celebrate('GitHub verbunden');toast('Automatische Sicherung ist aktiv.')}else openMenu()})};
+     const ghN=s.querySelector('#ghNow');if(ghN)ghN.onclick=async()=>{await ghSync();if(!ghStat.err){buzz(10);toast('Auf GitHub gesichert.')}};
+     const ghP=s.querySelector('#ghPull');if(ghP){let armed=false;ghP.onclick=async()=>{
+       if(!armed){armed=true;ghP.textContent='Ersetzt die Daten auf diesem Gerät – nochmal tippen';return}
+       ghP.disabled=true;ghP.textContent='Lade von GitHub …';
+       try{const o=await ghRestore(ghCfg());await saving;await restoreVault(o);setGhStat({err:'',conflict:false})}catch(x){ghP.disabled=false;ghP.textContent='Stattdessen den GitHub-Stand laden';toast(x&&x.status?ghErrText(x):(x&&x.message||'Das hat nicht geklappt.'))}}}
+     const ghF=s.querySelector('#ghForce');if(ghF)ghF.onclick=async()=>{await ghSync(true);openMenu();if(!ghStat.err)celebrate('Gesichert')};
+     const ghX=s.querySelector('#ghOff');if(ghX){let armed=false;ghX.onclick=()=>{if(!armed){armed=true;ghX.classList.add('danger','sure');ghX.textContent='Wirklich trennen?';return}
+       const m=Object.assign({},db.meta);delete m.gh;db.meta=m;setGhStat({err:'',at:0,conflict:false});save();openMenu();toast('GitHub getrennt. Im Repo bleibt alles liegen.')}}
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};

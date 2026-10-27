@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0E6A5B" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0D1412" media="(prefers-color-scheme: dark)">
 <meta name="description" content="Abos, Verträge, Geräte und Belege – verschlüsselt auf deinem Handy.">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self'; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
@@ -253,6 +253,7 @@ body.locked .fan{display:none}
 .prot .hint{display:block}
 .prev{background:var(--accent-soft);border-radius:12px;padding:10px 14px;font-size:14px;display:grid;gap:2px}
 .prev:empty{display:none}
+.ghbox{display:grid;gap:12px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .field textarea{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;min-width:0;font:inherit;color:inherit;resize:vertical;min-height:80px;line-height:1.45}
 .notetext{background:var(--warn-soft);border-radius:12px;padding:10px 14px;margin-bottom:16px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px}
 .row .t .ni{width:15px;height:15px;margin-left:6px;vertical-align:-2px;color:var(--muted)}
