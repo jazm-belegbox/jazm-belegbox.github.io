@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.6.3';
+const APP_VERSION='0.6.7.4';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -758,8 +758,14 @@ function ring(f,size,w){const r=(size-w)/2,c=+(2*Math.PI*r).toFixed(2),h=size/2;
     `<circle class="arc" cx="${h}" cy="${h}" r="${r}" stroke-width="${w}" stroke-dasharray="${c}" stroke-dashoffset="${(c*(1-f)).toFixed(2)}" transform="rotate(-90 ${h} ${h})" style="stroke:${ringColor(f)}"/>`}</svg>`}
 function tileWrap(d){const p=prot(d);return `<div class="tw">${ring(p?p.f:null,46,3.5)}${tileFor(d)}</div>`}
 function devRow(d){const i=deviceInfo(d);return `<button type="button" class="row" data-kind="d" data-open="${d.id}">
-  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}${d.notiz?NOTEICON:''}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).concat((d.geschaetzt?'ca. ':'')+i.kauf.getFullYear()).join(' · '))}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest}</span>`:'')(rateInfo(d))}</div></div>
-  <span class="amt num">${d.preis?eur(d.preis):'–'}</span></button>`}
+  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}${d.notiz?NOTEICON:''}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).concat((d.geschaetzt?'ca. ':'')+i.kauf.getFullYear()).join(' · '))}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest} von ${r.n}</span>`:'')(rateInfo(d))}</div></div>
+  ${amtFor(d)}</button>`}
+/* Betrag rechts: bei Ratenkauf Endsumme, bisher gezahlt und Fortschritt */
+function amtFor(d){const r=rateInfo(d);
+  if(!r)return `<span class="amt num">${d.preis?eur(d.preis):'–'}</span>`;
+  const bez=r.paid*r.b+Number(d.rate.anzahlung||0);
+  return `<span class="amt num ramt" aria-label="Endsumme ${eur(r.total)}, davon bezahlt ${eur(bez)}">${eur(r.total)}
+    <small>${r.aktiv?'bezahlt '+eur(bez):'abbezahlt'}</small><span class="mbar"><i style="width:${Math.round(bez/r.total*100)}%"></i></span></span>`}
 function viewDevices(){
   const F={alle:['Alle',()=>true],schutz:['Geschützt',d=>!!deviceInfo(d).best],bald:['Endet bald',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60}],ohne:['Ohne Beleg',d=>d.nachweis==='keiner'],raten:['Raten',d=>!!rateInfo(d)]};
   const list=db.devices.filter(F[filter]?F[filter][1]:()=>true).sort((a,b)=>a.name.localeCompare(b.name,'de'));
