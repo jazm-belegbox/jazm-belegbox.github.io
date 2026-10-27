@@ -1,6 +1,10 @@
 (function(){
-const APP_VERSION='0.7.1.6';
-const KEY='belegbox-v1';
+const APP_VERSION='0.8.0.7';
+/* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
+const BASE=location.pathname.replace(/[^/]*$/,'');
+const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
+const IS_TEST=!!NS;
+const KEY=NS+'belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
 function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
@@ -51,7 +55,7 @@ function samples(){
    - Der Datenschlüssel liegt nur verpackt im Speicher: einmal mit dem Passwort (PBKDF2, SHA-256),
      optional zusätzlich mit dem Fingerabdruck (Passkey mit PRF-Erweiterung, HKDF).
    - Klartext und Schlüssel existieren nur im Arbeitsspeicher, solange die App entsperrt ist. */
-const VKEY='belegbox-vault-v1', ITER=600000, IDLE_MS=5*60e3, BG_MS=60e3;
+const VKEY=NS+'belegbox-vault-v1', ITER=600000, IDLE_MS=5*60e3, BG_MS=60e3;
 let db=null, key=null, dekRaw=null, vmeta=null, tab='home', filter='alle';
 const te=new TextEncoder(), td=new TextDecoder();
 const rnd=n=>crypto.getRandomValues(new Uint8Array(n));
@@ -68,19 +72,25 @@ async function bioKek(prfOut,salt){
 async function seal(k,bytes){const iv=rnd(12);return {iv:toB64(iv),ct:toB64(await crypto.subtle.encrypt({name:'AES-GCM',iv},k,bytes))}}
 async function open_(k,box){return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:fromB64(box.iv)},k,fromB64(box.ct)))}
 const importDek=raw=>crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt']);
-function readVault(){try{const r=localStorage.getItem(VKEY);return r?JSON.parse(r):null}catch(e){return null}}
+let vaultJson=null; // aktueller verschlüsselter Tresor (Text), wird beim Start aus dem Speicher geladen
+function readVault(){try{return vaultJson?JSON.parse(vaultJson):null}catch(e){return null}}
+/* Speichern: zuerst IndexedDB (viel Platz) – schlägt das fehl, gilt das Speichern als fehlgeschlagen.
+   Danach eine Zweitkopie in localStorage (max. ca. 5 MB). Passt sie nicht mehr hinein, wird die alte Kopie
+   entfernt, damit nie ein veralteter Stand geladen werden kann. */
+async function writeVaultStr(json){
+  await filePut(MIRROR,json);vaultJson=json;
+  try{localStorage.setItem(VKEY,json)}catch(e){try{localStorage.removeItem(VKEY)}catch(x){}}
+}
 async function persist(){
   if(!key||!db||!vmeta)return;
   const box=await seal(key,te.encode(JSON.stringify(db)));
   const json=JSON.stringify(Object.assign({},vmeta,{v:2,iv:box.iv,ct:box.ct,saved:Date.now()}));
-  // Zweitkopie zuerst (IndexedDB), dann Hauptspeicher – fällt einer weg, stellt boot() aus dem anderen wieder her
-  try{await filePut(MIRROR,json)}catch(e){}
-  localStorage.setItem(VKEY,json);
+  await writeVaultStr(json);
 }
 /* ---------- Automatische Sicherung in ein privates GitHub-Repo ----------
    Hochgeladen wird nur bereits Verschlüsseltes: vault.json (= Tresor wie im Browser) und files/<id>.bin (IV + Chiffretext).
    Zugangsdaten liegen verschlüsselt im Tresor (db.meta.gh). Im Repo wird nie automatisch etwas gelöscht. */
-const GH_API='https://api.github.com',GH_LS='belegbox-gh-status';
+const GH_API='https://api.github.com',GH_LS=NS+'belegbox-gh-status';
 let ghTimer=0,ghBusy=false,ghAgain=null,ghPending=null;
 let ghStat=(()=>{try{return JSON.parse(localStorage.getItem(GH_LS))||{}}catch(e){return {}}})();
 function setGhStat(o){const prev=ghStat.err||'';ghStat=Object.assign({},ghStat,o);try{localStorage.setItem(GH_LS,JSON.stringify(ghStat))}catch(e){}
@@ -117,7 +127,7 @@ async function ghSync(force){
   if(ghBusy){ghAgain={force};return}
   ghBusy=true;clearTimeout(ghTimer);ghPending=null;setGhStat({});
   try{
-    let local=null;try{local=localStorage.getItem(VKEY)}catch(e){}
+    const local=vaultJson; // genau der Stand, der zuletzt erfolgreich gespeichert wurde
     if(!local||!vaultOk(local))throw new Error('local');
     const lv=JSON.parse(local);
     // 1) Belege/Dokumente, die im Repo noch fehlen (Dateien ändern sich nie, daher reicht der Name)
@@ -169,11 +179,14 @@ async function boot(){
     let raw=null;try{raw=localStorage.getItem(VKEY)}catch(e){}
     const m=await fileGet(MIRROR).catch(()=>null);
     const ok=!!raw&&vaultOk(raw),mOk=typeof m==='string'&&vaultOk(m);
-    if(mOk&&(!ok||vaultTime(m)>vaultTime(raw))){
+    if(mOk&&(!ok||vaultTime(m)>=vaultTime(raw))){ // IndexedDB ist neuer oder gleich alt: das ist der Stand
+      vaultJson=m;
       if(raw&&!ok){try{localStorage.setItem(VKEY+'-defekt-'+Date.now(),raw)}catch(e){}}
-      localStorage.setItem(VKEY,m);
-      if(!ok)setTimeout(()=>toast('Der Tresor fehlte im Hauptspeicher und wurde aus der Zweitkopie wiederhergestellt.'),800);
-    }else if(ok&&m!==raw){filePut(MIRROR,raw).catch(()=>{})}
+      if(raw!==m){try{localStorage.setItem(VKEY,m)}catch(e){try{localStorage.removeItem(VKEY)}catch(x){}}}
+    }else if(ok){ // nur localStorage hat einen (neueren) Stand – z. B. erster Start nach dem Update: in IndexedDB übernehmen
+      vaultJson=raw;await filePut(MIRROR,raw).catch(()=>{});
+      if(mOk)setTimeout(()=>toast('Der Tresor wurde aus der Zweitkopie wiederhergestellt.'),800);
+    }
     if(!ok&&!mOk){bootInfo.broken=!!raw;
       bootInfo.orphans=(await fileKeys().catch(()=>[])).filter(k=>!String(k).startsWith('__')).length}
   }catch(e){}
@@ -213,7 +226,7 @@ async function changePassword(oldPw,newPw){
   vmeta=Object.assign({},vmeta,{iter:ITER,salt:toB64(salt),wrapPw:await seal(kek,dekRaw)});
   await save();
 }
-function lock(anim){saving.then(()=>{key=null;db=null;if(dekRaw)dekRaw.fill(0);dekRaw=null;vmeta=null;closeViewer();closeSheet(false);setFan(false);main.innerHTML='';shown={};showLock(anim===true)})}
+function lock(anim){saving.then(()=>{if(histPushed){histPushed=false;ignorePop=true;try{history.back()}catch(e){ignorePop=false}}key=null;db=null;if(dekRaw)dekRaw.fill(0);dekRaw=null;vmeta=null;closeViewer();closeSheet(false);setFan(false);main.innerHTML='';shown={};showLock(anim===true)})}
 
 /* Fingerabdruck / Gesichtserkennung über einen Passkey mit PRF-Erweiterung */
 const bioPossible=()=>!!(window.PublicKeyCredential&&navigator.credentials&&window.isSecureContext);
@@ -305,6 +318,7 @@ const VAULT='<div class="vault" aria-hidden="true"><div class="door"><svg viewBo
   +'<g class="wheel"><circle cx="28" cy="28" r="5.5"/><path d="M28 14v28M15.88 21l24.24 14M15.88 35l24.24-14"/>'
   +[[28,14],[40.12,21],[40.12,35],[28,42],[15.88,35],[15.88,21]].map(p=>'<circle class="knob" cx="'+p[0]+'" cy="'+p[1]+'" r="2.3"/>').join('')
   +'</g></svg></div></div>';
+const CAM='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></svg>';
 const SHIELD='<svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 let lockTok=0;
 let autoBioNext=true,bioPrompt=null;
@@ -341,7 +355,7 @@ function showLock(closing){
         <p class="hint" id="lgo_msg" hidden></p>
         <button type="button" class="btn primary" id="lgo_go">Sicherung von GitHub laden</button></div>`
       :'<button type="button" class="linkbtn" id="lreset">Passwort vergessen? Tresor zurücksetzen</button>'}
-    <p class="hint" style="text-align:center">Version ${APP_VERSION}</p>
+    <p class="hint" style="text-align:center">Version ${APP_VERSION}${IS_TEST?' · <b style="color:var(--warn)">Test-App, eigener Speicher</b>':''}</p>
   </form></div>`;
   const f=L.querySelector('#lf'),err=L.querySelector('#lerr'),go=L.querySelector('#lgo'),V=L.querySelector('.vault');
   // Beim Sperren schließt sich die Tresortür
@@ -404,13 +418,13 @@ function showLock(closing){
     try{restoreVault(await readBackupFile(file))}catch(x){fail(x.message)}});
   const rs=L.querySelector('#lreset');
   if(rs){let armed=false;rs.onclick=()=>{if(!armed){armed=true;buzz(10);rs.classList.add('sure');rs.textContent='Wirklich alles löschen? Nochmal tippen';return}
-    try{localStorage.removeItem(VKEY)}catch(e){}fileClear().catch(()=>{});showLock()}}
+    try{localStorage.removeItem(VKEY)}catch(e){}vaultJson=null;fileClear().catch(()=>{});showLock()}}
   if(!bio){const first=L.querySelector('input');if(first)first.focus({preventScroll:true})}
 }
 
 /* Dateien weitergeben: Teilen-Menü (z. B. Google Drive), sonst normaler Download */
 async function deliverFile(name,text,type){
-  const file=new File([text],name,{type});
+  const file=new File([text],name,{type});allowAway();
   if(navigator.canShare&&navigator.canShare({files:[file]})){
     try{await navigator.share({files:[file],title:name});return true}
     catch(e){if(e&&e.name==='AbortError')return false}
@@ -423,7 +437,7 @@ async function deliverFile(name,text,type){
    Große Dateien liegen nicht im kleinen Tresor-Speicher, sondern einzeln in IndexedDB –
    jede mit demselben Datenschlüssel AES-256-GCM-verschlüsselt (ID als Zusatzdaten gebunden).
    Im Tresor stehen nur Name, Größe und ein kleines Vorschaubild. */
-const IDB_NAME='belegbox-files',STORE='files';
+const IDB_NAME=NS+'belegbox-files',STORE='files';
 let idbP=null;
 function idb(){return idbP||(idbP=new Promise((res,rej)=>{const r=indexedDB.open(IDB_NAME,1);
   r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>res(r.result);r.onerror=()=>{idbP=null;rej(r.error)}}))}
@@ -501,7 +515,7 @@ async function openViewer(d){
   V.innerHTML=`<div class="vhead"><button type="button" class="x" id="vx" aria-label="Schließen">✕</button><b>${esc(d.name)}</b>
     <button type="button" class="ghost" id="vzoom" aria-pressed="false">Zoom</button><button type="button" class="ghost" id="vshare">Teilen</button></div>
     <div class="vbody" id="vbody"><div class="vload"><span class="spin"></span>Wird entschlüsselt …</div></div>`;
-  V.hidden=false;document.body.style.overflow='hidden';buzz(6);
+  V.hidden=false;document.body.style.overflow='hidden';buzz(6);layerOpened();
   if(motion())V.animate([{opacity:0,transform:'translateY(30px)'},{opacity:1,transform:'none'}],{duration:280,easing:'cubic-bezier(.2,.85,.25,1)'});
   const body=V.querySelector('#vbody'),zb=V.querySelector('#vzoom');
   V.querySelector('#vx').onclick=closeViewer;
@@ -523,7 +537,7 @@ async function openViewer(d){
 }
 function closeViewer(){viewerTok++;const V=document.getElementById('viewer');if(!V||V.hidden)return;
   if(V._doc){pdfClose(V._doc);V._doc=null}if(V._url){URL.revokeObjectURL(V._url);V._url=null}
-  V.hidden=true;V.innerHTML='';if(!root.firstElementChild)document.body.style.overflow=''}
+  V.hidden=true;V.innerHTML='';if(!root.firstElementChild)document.body.style.overflow='';layerClosed()}
 
 /* Verschlüsselte Sicherung: enthält nur den bereits verschlüsselten Tresor */
 async function exportBackup(){
@@ -545,8 +559,9 @@ function readBackupFile(file){return new Promise((res,rej)=>{const r=new FileRea
   r.readAsText(file)})}
 async function restoreVault(o){let fileErr=false;
   try{await fileClear();for(const [id,f] of Object.entries(o.files||{}))await filePut(id,{iv:fromB64(f.iv),ct:fromB64(f.ct).buffer})}catch(x){fileErr=true}
-  const vj=JSON.stringify(o.vault);try{await filePut(MIRROR,vj)}catch(e){}
-  localStorage.setItem(VKEY,vj);bootInfo={orphans:0,broken:false};key=null;db=null;closeViewer();closeSheet(false);main.innerHTML='';showLock();
+  const vj=JSON.stringify(o.vault);
+  try{await writeVaultStr(vj)}catch(e){toast('Die Sicherung passt nicht in den Speicher des Handys. Gib im Browser Speicherplatz frei und versuch es erneut.');return}
+  bootInfo={orphans:0,broken:false};key=null;db=null;closeViewer();closeSheet(false);main.innerHTML='';showLock();
   toast(fileErr?'Sicherung geladen, aber nicht alle Dokumente passten in den Speicher. Entsperre mit dem Passwort, das beim Sichern galt.':'Sicherung geladen. Entsperre sie mit dem Passwort, das beim Sichern galt.')}
 
 /* Kalenderexport (.ics) mit Erinnerung 7 Tage und 1 Tag vorher */
@@ -577,10 +592,16 @@ async function askPersist(){try{if(navigator.storage&&navigator.storage.persist)
 
 /* Automatische Sperre */
 let lastAct=Date.now(),hiddenAt=0;
-['pointerdown','keydown','scroll','touchstart'].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now()},{passive:true}));
+['pointerdown','keydown','scroll','touchstart','input','change'].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now()},{passive:true,capture:true}));
+/* Wer Datei-Auswahl, Kamera oder Teilen-Menü öffnet, ist kurz in einer anderen App – dann nicht sperren
+   (höchstens 10 Minuten lang, danach greift die Sperre wieder) */
+let awayUntil=0;const allowAway=ms=>{awayUntil=Date.now()+(ms||10*60e3)};
+document.addEventListener('click',e=>{const t=e.target;if(!t||!t.closest)return;
+  const inp=t.matches('input[type=file]')?t:(t.closest('label')&&t.closest('label').querySelector('input[type=file]'));if(inp)allowAway()},true);
 setInterval(()=>{if(key&&Date.now()-lastAct>IDLE_MS)lock()},10000);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){hiddenAt=Date.now();return}
-  if(key&&hiddenAt&&Date.now()-hiddenAt>BG_MS){autoBioNext=true;lock()}
+  const away=Date.now()<awayUntil;awayUntil=0;
+  if(key&&hiddenAt&&Date.now()-hiddenAt>BG_MS&&!away){autoBioNext=true;lock()}
   else if(!key&&bioPrompt)bioPrompt()});
 
 /* Berechnungen */
@@ -708,6 +729,8 @@ function render(mode){
   main.querySelectorAll('[data-filter]').forEach(el=>el.onclick=()=>{if(filter===el.dataset.filter)return;filter=el.dataset.filter;buzz(5);render('rows')});
   main.querySelectorAll('[data-goto]').forEach(el=>el.onclick=()=>goTab(el.dataset.goto));
   if(tab==='home'){bindCheck();const rg=main.querySelector('#revGo');if(rg)rg.onclick=openReview}
+  else if(tab==='geraete')bindToolbar(DEV_F,DEV_S,'sortD',db.devices);
+  else bindToolbar(CON_F,CON_S,'sortC',db.contracts);
   updBadge();
   const sec=main.firstElementChild;
   sec.querySelectorAll('.list>.row').forEach((r,i)=>r.style.setProperty('--j',Math.min(i,10)));
@@ -750,7 +773,7 @@ function viewHome(){
       :`<div class="empty">Keine Fristen in den nächsten 90 Tagen.</div>`}</div>
     ${ohne?`<div class="sechead"><h2>Ohne Nachweis</h2><button type="button" class="ghost" data-goto="geraete">Alle Geräte</button></div>
     <div class="list">${db.devices.filter(d=>d.nachweis==='keiner').map(devRow).join('')}</div>
-    <p class="hint">Tipp: Bestellhistorie bei Online-Händlern, alte Bestellmails und Kontoauszüge durchsuchen. Für die Gewährleistung reicht oft jeder plausible Kaufnachweis.</p>`:''}
+    <details class="tip"><summary>Wo finde ich alte Kaufbelege?</summary><p>Bestellhistorie bei Online-Händlern, alte Bestellmails und Kontoauszüge durchsuchen. Für die Gewährleistung reicht oft jeder plausible Kaufnachweis.</p></details>`:''}
   </section>`;
 }
 /* Garantie-Ring: wie viel vom Schutz noch übrig ist, grün → gelb → rot */
@@ -771,26 +794,62 @@ function amtFor(d){const r=rateInfo(d);
   const bez=r.paid*r.b+Number(d.rate.anzahlung||0);
   return `<span class="amt num ramt" aria-label="Endsumme ${eur(r.total)}, davon bezahlt ${eur(bez)}">${eur(r.total)}
     <small>${r.aktiv?'bezahlt '+eur(bez):'abbezahlt'}</small><span class="mbar"><i style="width:${Math.round(bez/r.total*100)}%"></i></span></span>`}
+const DEV_F={alle:['Alle Geräte',()=>true,'Alle'],schutz:['Mit Garantie oder Gewährleistung',d=>!!deviceInfo(d).best,'Geschützt'],bald:['Schutz endet bald',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60},'Endet bald'],ohne:['Ohne Kaufbeleg',d=>d.nachweis==='keiner','Ohne Beleg'],raten:['Auf Raten',d=>!!rateInfo(d),'Raten']};
+const DEV_S={name:['Name (A–Z)',(a,b)=>a.name.localeCompare(b.name,'de'),'Name'],schutz:['Schutz endet zuerst',(a,b)=>{const x=deviceInfo(a).best,y=deviceInfo(b).best;return (x?x.date:Infinity)-(y?y.date:Infinity)},'Schutzende'],
+  kauf:['Neueste zuerst',(a,b)=>parse(b.kauf)-parse(a.kauf),'Neueste'],preis:['Teuerste zuerst',(a,b)=>Number(b.preis||0)-Number(a.preis||0),'Preis']};
+const CON_F={alle:['Alle Verträge',()=>true,'Alle'],aktiv:['Aktiv',c=>c.status!=='gekuendigt','Aktiv'],bald:['Frist in 45 Tagen',c=>c.status!=='gekuendigt'&&!weiterOn(c)&&contractInfo(c).by&&days(contractInfo(c).by)<=45,'Frist bald'],gek:['Gekündigt',c=>c.status==='gekuendigt','Gekündigt']};
+const CON_S={frist:['Nächste Frist zuerst',(a,b)=>{const x=contractInfo(a),y=contractInfo(b);return (x.by||x.end)-(y.by||y.end)},'Frist'],kosten:['Teuerste zuerst',(a,b)=>monthly(b)-monthly(a),'Kosten'],name:['Name (A–Z)',(a,b)=>a.anbieter.localeCompare(b.anbieter,'de'),'Name']};
+const UIK=NS+'belegbox-ui';let ui=(()=>{try{return JSON.parse(localStorage.getItem(UIK))||{}}catch(e){return {}}})();
+const setUi=o=>{ui=Object.assign({},ui,o);try{localStorage.setItem(UIK,JSON.stringify(ui))}catch(e){}};
+const FUNNEL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>';
+const SORTI='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 16l4 4 4-4M17 20V4M13 8l4-4 4 4"/></svg>';
+const CHEV='<svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+function toolbar(F,S,sk,all,total,shown){
+  const fl=F[filter]?F[filter][2]:'Alle',on=filter!=='alle';
+  return `<div class="tbar"><button type="button" class="tsel${on?' on':''}" data-pop="f" aria-haspopup="menu">${FUNNEL}<span class="tv">${esc(fl)}</span>${on?`<span class="tcnt num">${shown}</span>`:''}${CHEV}</button>
+    ${on?`<button type="button" class="tclr" data-clr aria-label="Filter zurücksetzen">✕</button>`:''}
+    <button type="button" class="tsel" data-pop="s" aria-haspopup="menu">${SORTI}<span class="tv">${esc(S[sk][2])}</span>${CHEV}</button></div>`}
+function bindToolbar(F,S,sKey,items){
+  const fb=main.querySelector('[data-pop=f]'),sb=main.querySelector('[data-pop=s]'),cl=main.querySelector('[data-clr]');
+  if(fb)fb.onclick=()=>openPop(fb,Object.entries(F).map(([k,v])=>({k,label:v[0],n:items.filter(v[1]).length})),filter,k=>{if(k!==filter){filter=k;render('rows')}});
+  if(sb)sb.onclick=()=>openPop(sb,Object.entries(S).map(([k,v])=>({k,label:v[0]})),ui[sKey]||Object.keys(S)[0],k=>{setUi({[sKey]:k});render('rows')});
+  if(cl)cl.onclick=()=>{filter='alle';buzz(5);render('rows')}}
+/* Aufklappmenü unter einem Knopf */
+let popEl=null;
+function closePop(){if(!popEl)return;const p=popEl;popEl=null;
+  if(motion())p.animate([{opacity:1},{opacity:0}],{duration:120}).onfinish=()=>p.remove();else p.remove();layerClosed()}
+function openPop(btn,items,cur,onPick){
+  closePop();buzz(5);
+  const r=btn.getBoundingClientRect(),W=Math.min(300,innerWidth-24);
+  const left=Math.max(12,Math.min(r.left,innerWidth-W-12));
+  const p=document.createElement('div');p.className='pop';
+  p.innerHTML=`<div class="popscrim"></div><div class="popm" role="menu" style="left:${left}px;top:${r.bottom+6}px;width:${W}px">${items.map(it=>`<button type="button" role="menuitemradio" aria-checked="${it.k===cur}" data-k="${it.k}"><span class="pk">${it.k===cur?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>':''}</span><span class="pl">${esc(it.label)}</span>${it.n!=null?`<span class="pn num">${it.n}</span>`:''}</button>`).join('')}</div>`;
+  document.body.appendChild(p);popEl=p;layerOpened();
+  const m=p.querySelector('.popm');if(motion())m.animate([{opacity:0,transform:'translateY(-6px) scale(.97)'},{opacity:1,transform:'none'}],{duration:180,easing:'cubic-bezier(.2,.85,.25,1)'});
+  p.querySelector('.popscrim').onclick=closePop;
+  p.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{const k=b.dataset.k;closePop();buzz(6);onPick(k)});
+  const first=p.querySelector('[aria-checked=true]')||p.querySelector('[data-k]');if(first)first.focus({preventScroll:true});
+}
 function viewDevices(){
-  const F={alle:['Alle',()=>true],schutz:['Geschützt',d=>!!deviceInfo(d).best],bald:['Endet bald',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60}],ohne:['Ohne Beleg',d=>d.nachweis==='keiner'],raten:['Raten',d=>!!rateInfo(d)]};
-  const list=db.devices.filter(F[filter]?F[filter][1]:()=>true).sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  const F=DEV_F,sk=DEV_S[ui.sortD]?ui.sortD:'name';
+  const list=db.devices.filter(F[filter]?F[filter][1]:()=>true).sort(DEV_S[sk][1]);
   return `<section class="view">
     <div class="sechead"><h2>Geräte</h2><span class="count num">${list.length} von ${db.devices.length}</span></div>
-    <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
-    <div class="list">${list.length?list.map(devRow).join(''):`<div class="empty">Hier ist noch nichts. Tippe auf „Neu“, um dein erstes Gerät mit Kaufdatum und Beleg anzulegen.</div>`}</div>
+    ${toolbar(F,DEV_S,sk,db.devices,db.devices.length,list.length)}
+    <div class="list">${list.length?list.map(devRow).join(''):(db.devices.length?`<div class="empty">Kein Gerät passt zu diesem Filter.</div>`:`<div class="empty">Hier ist noch nichts. Tippe auf „Neu“, um dein erstes Gerät mit Kaufdatum und Beleg anzulegen.</div>`)}</div>
   </section>`;
 }
 function viewContracts(){
-  const F={alle:['Alle',()=>true],aktiv:['Aktiv',c=>c.status!=='gekuendigt'],bald:['Frist bald',c=>c.status!=='gekuendigt'&&days(contractInfo(c).by)<=45],gek:['Gekündigt',c=>c.status==='gekuendigt']};
-  const list=db.contracts.filter(F[filter]?F[filter][1]:()=>true).sort((a,b)=>{const x=contractInfo(a),y=contractInfo(b);return (x.by||x.end)-(y.by||y.end)});
+  const F=CON_F,sk=CON_S[ui.sortC]?ui.sortC:'frist';
+  const list=db.contracts.filter(F[filter]?F[filter][1]:()=>true).sort(CON_S[sk][1]);
   return `<section class="view">
     <div class="sechead"><h2>Abos & Verträge</h2><span class="count num">${list.length} von ${db.contracts.length}</span></div>
-    <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
+    ${toolbar(F,CON_S,sk,db.contracts,db.contracts.length,list.length)}
     <div class="list">${list.length?list.map(c=>`<button type="button" class="row" data-kind="c" data-open="${c.id}">
       ${conTile(c)}
       <div class="main"><div class="t">${esc(c.anbieter)}${c.notiz?NOTEICON:''}</div><div class="s">${esc(c.kategorie)}${Number(c.intervall)!==1?' · '+eur(price(c))+' '+(INTERVALL[c.intervall]||''):''}</div><div class="pl">${weiterOn(c)?'<span class="pill p-none">Läuft bewusst weiter</span>':conPill(c)}</div></div>
       <span class="amt num">${eur(monthly(c))}<small>/Monat</small><small class="pd">${dayTxt(perDay(c))}/Tag</small></span></button>`).join('')
-      :`<div class="empty">Noch keine Verträge. Tippe auf „Neu“ und trage Kosten, Laufzeit und Kündigungsfrist ein.</div>`}</div>
+      :(db.contracts.length?`<div class="empty">Kein Vertrag passt zu diesem Filter.</div>`:`<div class="empty">Noch keine Verträge. Tippe auf „Neu“ und trage Kosten, Laufzeit und Kündigungsfrist ein.</div>`)}</div>
   </section>`;
 }
 
@@ -803,7 +862,7 @@ function openSheet(html,onMount,from){
   const sc=root.firstElementChild,sh=sc.firstElementChild;
   sc.addEventListener('click',e=>{if(e.target===sc)closeSheet()});
   root.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeSheet());
-  document.body.style.overflow='hidden';
+  document.body.style.overflow='hidden';layerOpened();
   if(onMount)onMount(sh);
   if(motion()){
     if(replacing)sh.animate([{opacity:0,transform:'translateY(14px) scale(.985)'},{opacity:1,transform:'none'}],{duration:260,easing:'cubic-bezier(.2,.85,.25,1)'});
@@ -844,14 +903,14 @@ function dragSheet(sc,sh){
 function closeSheet(anim){
   document.body.style.overflow='';
   const sc=root.firstElementChild;if(!sc)return;
-  if(anim===false||!motion()){++sheetTok;root.innerHTML='';return}
+  if(anim===false||!motion()){++sheetTok;root.innerHTML='';layerClosed();return}
   if(sc.classList.contains('closing'))return;
   const tok=++sheetTok,sh=sc.firstElementChild;
   const from=sh.style.transform||'translateY(0)';
   sh.getAnimations().forEach(a=>a.cancel());
   sc.classList.add('closing');sc.classList.remove('drag');sc.style.setProperty('--k','0');
   sh.animate([{transform:from},{transform:'translateY(105%)'}],{duration:260,easing:'cubic-bezier(.4,0,.9,.6)',fill:'forwards'});
-  setTimeout(()=>{if(tok===sheetTok)root.innerHTML=''},280);
+  layerClosed();setTimeout(()=>{if(tok===sheetTok)root.innerHTML=''},280);
 }
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!document.getElementById('viewer').hidden)closeViewer();else if(fanOpen)setFan(false);else if(root.firstElementChild)closeSheet()});
 const head=t=>`<div class="sheethead"><h2>${t}</h2><button type="button" class="x" data-close aria-label="Schließen">✕</button></div>`;
@@ -966,10 +1025,21 @@ function openForm(kind,item,camera,tpl){
       <label class="field"><span>Standort</span><input id="f_raum" placeholder="Küche"></label></div>
     <div class="grid2"><label class="field"><span>Hersteller</span><input id="f_her"></label>
       <label class="field"><span>Modell</span><input id="f_mod"></label></div>
-    <div class="field"><span><label for="f_sn">Seriennummer</label></span><div class="snrow"><input id="f_sn" placeholder="steht auf dem Typenschild">${canScan()?'<button type="button" class="btn scanbtn" id="f_scan" aria-label="Seriennummer scannen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg>Scannen</button>':''}</div></div>
     <div class="grid2"><label class="field"><span>Kaufdatum *</span><input id="f_kauf" type="date" required value="${iso(T0)}"></label>
       <label class="field"><span>Preis (€)</span><input id="f_preis" type="number" step="0.01" min="0" inputmode="decimal"></label></div>
+    <label class="field"><span>Kaufnachweis</span><select id="f_nach">${Object.entries(NACHWEIS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
+    <div class="field"><span>Foto (Gerät, Beleg oder Typenschild)</span>
+      <label class="filepick"><img id="f_prev" alt=""${item&&item.foto?` src="${item.foto}"`:" hidden"}><span class="fp-ic"${item&&item.foto?" hidden":""}>${CAM}</span>
+        <span class="fp-t"><b id="f_ftxt">${item&&item.foto?"Foto ersetzen":"Foto aufnehmen oder wählen"}</b><small>Kamera oder Galerie</small></span><input id="f_foto" type="file" accept="image/*" hidden></label></div>
+    <div class="ask" id="f_ask" hidden><span>Ist das ein Kaufbeleg (Kassenbon oder Rechnung)?</span>
+      <div class="actions"><button type="button" class="btn" id="f_askYes">Ja, als Kaufnachweis</button><button type="button" class="btn" id="f_askNo">Nein</button></div></div>
+    ${item&&item.foto?'<label class="check"><input id="f_fotoDel" type="checkbox"> Vorhandenes Foto entfernen</label>':''}
+    ${DOCFIELD}
+    <details class="more"${(src0&&(src0.sn||src0.haendler||Number(src0.garantieMonate)||src0.rate||src0.notiz||src0.geschaetzt))?' open':''}><summary><span><b>Weitere Angaben</b><small>Seriennummer, Händler, Garantie, Raten, Notizen</small></span></summary><div class="moreb">
+    <div class="field"><span><label for="f_sn">Seriennummer</label></span><div class="snrow"><input id="f_sn" placeholder="steht auf dem Typenschild">${canScan()?'<button type="button" class="btn scanbtn" id="f_scan" aria-label="Seriennummer scannen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg>Scannen</button>':''}</div></div>
     <label class="check"><input id="f_ges" type="checkbox"> Kaufdatum nur geschätzt</label>
+    <div class="grid2"><label class="field"><span>Händler</span><input id="f_hae"></label>
+      <label class="field"><span>Herstellergarantie</span><select id="f_gar"><option value="0">keine</option><option value="12">1 Jahr</option><option value="24">2 Jahre</option><option value="36">3 Jahre</option><option value="60">5 Jahre</option></select></label></div>
     <label class="check"><input id="f_rk" type="checkbox"> Auf Raten gekauft / finanziert</label>
     <div class="ratebox" id="f_rbox" hidden>
       <div class="grid2"><label class="field"><span>Monatsrate (€) *</span><input id="f_rb" type="number" step="0.01" min="0" inputmode="decimal"></label>
@@ -980,28 +1050,14 @@ function openForm(kind,item,camera,tpl){
         <label class="field"><span>Finanzierungs-Nr.</span><input id="f_rv" autocomplete="off"></label></div>
       <div class="prev" id="f_rprev" aria-live="polite"></div>
     </div>
-    <div class="grid2"><label class="field"><span>Händler</span><input id="f_hae"></label>
-      <label class="field"><span>Herstellergarantie</span><select id="f_gar"><option value="0">keine</option><option value="12">1 Jahr</option><option value="24">2 Jahre</option><option value="36">3 Jahre</option><option value="60">5 Jahre</option></select></label></div>
-    <label class="field"><span>Kaufnachweis</span><select id="f_nach">${Object.entries(NACHWEIS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
-    <label class="field"><span>${item&&item.foto?'Foto ersetzen':'Foto (Gerät, Beleg oder Typenschild)'}</span><input id="f_foto" type="file" accept="image/*"></label>
-    <div class="ask" id="f_ask" hidden><span>Ist das ein Kaufbeleg (Kassenbon oder Rechnung)?</span>
-      <div class="actions"><button type="button" class="btn" id="f_askYes">Ja, als Kaufnachweis</button><button type="button" class="btn" id="f_askNo">Nein</button></div></div>
-    ${item&&item.foto?'<label class="check"><input id="f_fotoDel" type="checkbox"> Vorhandenes Foto entfernen</label>':''}
     <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
-    ${DOCFIELD}
+    </div></details>
     <p class="hint">Bei Kontoauszügen vorher alles außer der Buchung schwärzen. Die gesetzliche Gewährleistung von 2 Jahren ab Kauf wird automatisch berechnet.</p>`;
   const con=`
     <label class="field"><span>Anbieter *</span><input id="c_anb" required placeholder="z. B. Spotify"></label>
-    <div class="logofield"><div class="tile logo" id="c_logoPrev"${src0&&src0.logo?'':' hidden'}>${src0&&src0.logo?`<img src="${src0.logo}" alt="">`:''}</div>
-      <label class="field" style="flex:1"><span>Logo (optional)</span><input id="c_logo" type="file" accept="image/*"></label>
-      <button type="button" class="reveal" id="c_logoDel"${src0&&src0.logo?'':' hidden'}>Entfernen</button></div>
-    <p class="hint">Tipp: Logo auf der Anbieter-Webseite per langem Druck speichern oder einen Screenshot zuschneiden.</p>
     <label class="field"><span>Kategorie</span><select id="c_kat">${opt(CON_KAT,'Streaming')}</select></label>
-    <div class="grid2"><label class="field"><span>Kundennummer</span><input id="c_kd" autocomplete="off"></label>
-      <label class="field"><span>Vertragsnummer</span><input id="c_vnr" autocomplete="off"></label></div>
     <div class="grid2"><label class="field"><span>Kosten (€) *</span><input id="c_kost" type="number" step="0.01" min="0" required inputmode="decimal"></label>
       <label class="field"><span>Zahlweise</span><select id="c_int"><option value="1">monatlich</option><option value="3">vierteljährlich</option><option value="12">jährlich</option></select></label></div>
-    <label class="field" data-m="beginn ende"><span id="c_knL">Anderer Preis nach der Mindestlaufzeit (€, optional)</span><input id="c_kn" type="number" step="0.01" min="0" inputmode="decimal" placeholder="leer lassen, wenn der Preis gleich bleibt"></label>
     <label class="field"><span>Laufzeit</span><select id="c_mod"><option value="beginn">Aus dem Vertragsbeginn berechnen</option><option value="ende">Aktuelles Laufzeitende selbst angeben</option><option value="offen">Unbefristet, jederzeit kündbar</option></select></label>
     <label class="field" data-m="ende"><span>Aktuelles Laufzeitende *</span><input id="c_end" type="date"></label>
     <div class="grid2" data-m="beginn"><label class="field"><span>Vertragsbeginn *</span><input id="c_beg" type="date" required value="${iso(T0)}"></label>
@@ -1012,8 +1068,17 @@ function openForm(kind,item,camera,tpl){
     <div class="prev" id="c_prev" aria-live="polite"></div>
     <div class="note" id="c_law" hidden>Verträge, die ab dem 1. März 2022 geschlossen wurden, verlängern sich nach der Mindestlaufzeit meist nur noch auf unbestimmte Zeit und sind dann monatlich kündbar (1 Monat Frist). Prüf kurz deine Unterlagen.
       <button type="button" class="linkbtn" id="c_lawGo" style="display:block;padding-top:6px;color:var(--warn)">Als „unbefristet, 1 Monat Frist“ übernehmen</button></div>
+    ${DOCFIELD}
+    <details class="more"${(src0&&(src0.logo||src0.kundennr||src0.vertragsnr||(src0.kostenNach!=null&&src0.kostenNach!=='')||src0.notiz))?' open':''}><summary><span><b>Weitere Angaben</b><small>Logo, Kunden- und Vertragsnummer, Preisänderung, Notizen</small></span></summary><div class="moreb">
+    <div class="logofield"><div class="tile logo" id="c_logoPrev"${src0&&src0.logo?'':' hidden'}>${src0&&src0.logo?`<img src="${src0.logo}" alt="">`:''}</div>
+      <label class="btn logobtn">${src0&&src0.logo?'Logo ändern':'Logo wählen'}<input id="c_logo" type="file" accept="image/*" hidden></label>
+      <button type="button" class="reveal" id="c_logoDel"${src0&&src0.logo?'':' hidden'}>Entfernen</button></div>
+    <p class="hint">Tipp: Logo auf der Anbieter-Webseite per langem Druck speichern oder einen Screenshot zuschneiden.</p>
+    <div class="grid2"><label class="field"><span>Kundennummer</span><input id="c_kd" autocomplete="off"></label>
+      <label class="field"><span>Vertragsnummer</span><input id="c_vnr" autocomplete="off"></label></div>
+    <label class="field" data-m="beginn ende"><span id="c_knL">Anderer Preis nach der Mindestlaufzeit (€, optional)</span><input id="c_kn" type="number" step="0.01" min="0" inputmode="decimal" placeholder="leer lassen, wenn der Preis gleich bleibt"></label>
     <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
-    ${DOCFIELD}`;
+    </div></details>`;
   openSheet(head(item?'Bearbeiten':tpl?'Vertrag kopieren':'Neuer Eintrag')+`<form id="frm" novalidate>
     ${tpl?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
     <div class="seg"${item||tpl?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
@@ -1080,7 +1145,9 @@ function openForm(kind,item,camera,tpl){
     if(kind==='d'){ // Neues Foto: nur auf Nachfrage als Kaufnachweis werten, nie automatisch
       const fi=s.querySelector('#f_foto'),ask=s.querySelector('#f_ask'),na=s.querySelector('#f_nach');
       if(!src)na.value='keiner'; // neues Gerät: erst mit Beleg gilt es als nachgewiesen
-      fi.addEventListener('change',()=>{ask.hidden=!(fi.files[0]&&na.value==='keiner')});
+      fi.addEventListener('change',()=>{ask.hidden=!(fi.files[0]&&na.value==='keiner');const f=fi.files[0];if(!f)return;
+        const p=s.querySelector('#f_prev');if(p._u)URL.revokeObjectURL(p._u);p._u=URL.createObjectURL(f);p.src=p._u;p.hidden=false;
+        s.querySelector('.fp-ic').hidden=true;s.querySelector('#f_ftxt').textContent='Anderes Foto wählen';const fd=s.querySelector('#f_fotoDel');if(fd)fd.checked=false;buzz(6)});
       s.querySelector('#docIn').addEventListener('change',()=>{if(na.value==='keiner')ask.hidden=false});
       s.querySelector('#f_askYes').onclick=()=>{na.value='beleg';ask.hidden=true;buzz(6);toast('Kaufnachweis auf „Kassenbon / Rechnung“ gesetzt.')};
       s.querySelector('#f_askNo').onclick=()=>{ask.hidden=true;buzz(5)};
@@ -1126,16 +1193,19 @@ function openForm(kind,item,camera,tpl){
       upd();
     }
     if(camera&&kind==='d'){ // „Beleg fotografieren“: Kamera direkt öffnen
-      const fi=s.querySelector('#f_foto');fi.setAttribute('capture','environment');fi.click();
+      const fi=s.querySelector('#f_foto');fi.setAttribute('capture','environment');allowAway();fi.click();
     }else{const first=s.querySelector('input');if(first)first.focus({preventScroll:true})}
   });
 }
 
+let menuAcc=null;
+const relTime=t=>{const m=Math.round((Date.now()-t)/6e4);return m<1?'gerade eben':m<60?'vor '+m+' Min.':m<1440?'vor '+Math.round(m/60)+' Std.':'vor '+Math.round(m/1440)+' Tagen'};
 function openMenu(){
   openSheet(head('Daten & Sicherheit')+`
     <div class="secline"><svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
       Verschlüsselt mit AES-256${vmeta&&vmeta.bio?' · Fingerabdruck an':''} · sperrt nach 5 Min. ohne Eingabe oder 1 Min. im Hintergrund</div>
     <p class="hint" style="margin-bottom:14px">${ghCfg()?'Deine Daten liegen verschlüsselt in diesem Browser und als verschlüsselte Sicherung in deinem privaten GitHub-Repo. Sonst wird nichts gesendet.':'Deine Daten liegen nur verschlüsselt in diesem Browser und werden nirgendwohin gesendet.'} Dein Passwort wird nicht gespeichert.</p>
+<details class="acc" data-acc="sicher"${menuAcc==='sicher'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><span class="at"><b>Sicherheit</b><small>Passwort${vmeta&&vmeta.bio?' · Fingerabdruck an':' · Fingerabdruck aus'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
     <form id="pwf" novalidate style="margin-bottom:18px">
       <div class="label">Passwort ändern</div>
       <label class="field"><span>Aktuelles Passwort</span><input id="pw0" type="password" autocomplete="current-password"></label>
@@ -1148,7 +1218,7 @@ function openMenu(){
     <p class="hint" style="margin-bottom:10px">${vmeta&&vmeta.bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die Belegbox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „Belegbox“ in deinem Passwortmanager angelegt.'}</p>
     <div class="actions" style="margin-bottom:6px"><button type="button" class="btn${vmeta&&vmeta.bio?'':' primary'}" id="bioBtn">${vmeta&&vmeta.bio?'Ausschalten':'Einschalten'}</button></div>
     <p class="hint" id="bioMsg" hidden></p><div style="height:12px"></div>`:''}
-    <div class="label" style="margin-bottom:8px">Automatische Sicherung (GitHub)</div>
+</div></details><details class="acc" data-acc="gh"${menuAcc==='gh'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></span><span class="at"><b>Sicherung in GitHub</b><small>${ghCfg()?(ghStat.err?'Problem – bitte ansehen':ghStat.at?'gesichert '+relTime(ghStat.at):'verbunden'):'nicht eingerichtet'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
     ${ghCfg()?`<p class="hint" style="margin-bottom:6px">Nach jeder Änderung landet der verschlüsselte Tresor in <b>${esc(db.meta.gh.owner)}/${esc(db.meta.gh.repo)}</b>. GitHub sieht nur verschlüsselte Daten.</p>
       <p class="hint" id="ghStatus" style="margin-bottom:10px;display:flex;gap:8px;align-items:center">${ghStatusText()}</p>
       ${ghStat.conflict?`<div class="note" style="background:var(--crit-soft);margin-bottom:10px">Im Repo liegt ein anderer Tresor (z. B. von einem früheren Gerät). Er bleibt in der Versionsgeschichte von GitHub erhalten, wenn du ihn ersetzt.
@@ -1160,18 +1230,19 @@ function openMenu(){
       <label class="field" style="margin-top:12px"><span>Zugangsschlüssel (github_pat_…)</span><input id="gh_t" type="password" autocomplete="off"></label>
       <p class="hint" id="gh_msg" hidden></p>
       <div class="actions" style="margin:10px 0 18px"><button type="button" class="btn primary" id="gh_go">Verbinden & sichern</button></div>`}
-    <div class="label" style="margin-bottom:8px">Erinnerungen</div>
+</div></details><details class="acc" data-acc="erin"${menuAcc==='erin'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/></svg></span><span class="at"><b>Erinnerungen</b><small>${db.meta&&db.meta.remind?'an':'aus'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
     ${'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="hint" style="margin-bottom:10px">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die Belegbox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
       <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="btn" id="rmOff">Ausschalten</button></div>`
     :`<p class="hint" style="margin-bottom:10px">Die Belegbox meldet sich, wenn in den nächsten 14 Tagen eine Kündigungsfrist oder Garantie abläuft – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
       <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="rmOn">Einschalten</button></div><p class="hint" id="rmMsg" hidden></p><div style="height:12px"></div>`):''}
-    <div class="label" style="margin-bottom:8px">Jahresrückblick</div>
-    <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="revM">Mein Jahr ${reviewYear()}${T0.getMonth()<11&&reviewYear()===T0.getFullYear()?' (bis heute)':''} ansehen</button></div>
-    <div class="label" style="margin-bottom:8px">Kalender</div>
+</div></details>
+    <button type="button" class="accrow" id="revM"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.2l5.9-.9z"/></svg></span><span class="at"><b>Jahresrückblick ${reviewYear()}</b><small>${T0.getMonth()<11&&reviewYear()===T0.getFullYear()?'bis heute ansehen':'ansehen'}</small></span><svg class="chev r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+    <details class="acc" data-acc="__dummy" hidden><summary></summary><div>
+</div></details><details class="acc" data-acc="kal"${menuAcc==='kal'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><span class="at"><b>Kalender</b><small>Fristen als Termine exportieren</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
     <p class="hint" style="margin-bottom:10px">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
     <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
     <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="icsGo">Fristen in Kalender exportieren</button></div>
-    <div class="label" style="margin-bottom:8px">Sicherung</div>
+</div></details><details class="acc" data-acc="datei"${menuAcc==='datei'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/></svg></span><span class="at"><b>Sicherungsdatei</b><small>${db.meta&&db.meta.lastBackup?'zuletzt '+fmtD(parse(db.meta.lastBackup)):'noch keine erstellt'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
     <p class="hint" style="margin-bottom:10px">Die Sicherung ist mit deinem aktuellen Passwort verschlüsselt und enthält auch alle PDFs und Dokumente. ${db.meta&&db.meta.lastBackup?'Letzte Sicherung: '+fmtD(parse(db.meta.lastBackup))+'.':'Bisher keine Sicherung.'}</p>
     <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="bkGo">Sicherung erstellen</button>
       <label class="btn" style="cursor:pointer">Sicherung laden<input id="bkIn" type="file" accept=".belegbox,application/json" hidden></label></div>
@@ -1179,9 +1250,11 @@ function openMenu(){
     <div id="bkConfirm" hidden style="margin:8px 0"><p class="hint" style="color:var(--crit);margin-bottom:8px">Die Daten auf diesem Gerät werden durch die Sicherung ersetzt.</p>
       <div class="actions"><button type="button" class="btn danger sure" id="bkYes">Ersetzen</button><button type="button" class="btn" id="bkNo">Abbrechen</button></div></div>
     <p class="hint" style="margin:6px 0 18px">${persisted===true?'Dauerhafter Speicher ist aktiv.':persisted===false?'Der Browser hat dauerhaften Speicher nicht zugesagt. Installiere die App auf dem Startbildschirm und sichere regelmäßig.':''}</p>
-    <div class="label" style="margin-bottom:8px">Einträge</div>
-    <div class="actions"><button type="button" class="btn" id="m_ex">Beispieldaten laden</button><button type="button" class="btn danger" id="del">Alle Einträge löschen</button></div>`,
-  s=>{s.querySelector('#pwf').addEventListener('submit',async e=>{e.preventDefault();const er=s.querySelector('#pwerr'),go=s.querySelector('#pwgo');
+</div></details><details class="acc" data-acc="eintr"${menuAcc==='eintr'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="at"><b>Einträge</b><small>${db.devices.length} Geräte · ${db.contracts.length} Verträge</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
+    <div class="actions"><button type="button" class="btn" id="m_ex">Beispieldaten laden</button><button type="button" class="btn danger" id="del">Alle Einträge löschen</button></div></div></details>`,
+  s=>{s.querySelectorAll('details.acc[data-acc]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open){menuAcc=d.dataset.acc;
+       s.querySelectorAll('details.acc[open]').forEach(o=>{if(o!==d)o.open=false});buzz(4)}else if(menuAcc===d.dataset.acc)menuAcc=null}));
+     s.querySelector('#pwf').addEventListener('submit',async e=>{e.preventDefault();const er=s.querySelector('#pwerr'),go=s.querySelector('#pwgo');
        const p0=s.querySelector('#pw0').value,p1=s.querySelector('#pw1').value,p2=s.querySelector('#pw2').value;
        const fail=m=>{er.textContent=m;er.hidden=false;go.disabled=false;go.textContent='Passwort ändern'};
        if(p1.length<10)return fail('Das neue Passwort braucht mindestens 10 Zeichen.');
@@ -1252,7 +1325,7 @@ function updBadge(){
   writeSched();
 }
 /* Für Erinnerungen bei geschlossener App: nur Datum und Art, keine Namen, keine Beträge */
-const SCHED='sched-belegbox';
+const SCHED=NS+'sched-belegbox';
 let schedLast='';
 async function writeSched(){
   if(!('caches' in window)||!db)return;
@@ -1289,7 +1362,7 @@ async function remindOff(){
 /* ---------- Kleine Helfer ---------- */
 async function copyText(t,okMsg){try{await navigator.clipboard.writeText(t);buzz(8);toast(okMsg||'Kopiert.');return true}
   catch(x){toast('Kopieren hat nicht geklappt. Markiere den Text und kopiere ihn von Hand.');return false}}
-async function shareText(title,text,files){
+async function shareText(title,text,files){allowAway();
   if(!navigator.share){return copyText(text,'Teilen geht hier nicht – der Text ist kopiert.')}
   try{if(files&&files.length&&navigator.canShare&&navigator.canShare({files})){await navigator.share({title,text,files});return true}
     await navigator.share({title,text});return true}
@@ -1396,7 +1469,8 @@ async function openScanner(onPick){
   document.body.appendChild(ov);
   const video=ov.querySelector('video'),msg=ov.querySelector('.scanmsg'),hits=ov.querySelector('.scanhits');
   let stream=null,alive=true,timer=0;const seen=new Map();
-  const close=()=>{alive=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());ov.remove()};
+  const close=()=>{alive=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());ov.remove();layerClosed()};
+  layerOpened();
   ov.querySelector('.x').onclick=close;
   try{
     const fm=await BarcodeDetector.getSupportedFormats().catch(()=>[]);
@@ -1449,8 +1523,7 @@ function checkDue(){
     .sort((a,b)=>monthly(b)-monthly(a))[0]||null}
 function checkCard(){const c=checkDue();if(!c)return '';
   return `<div class="chk" data-chk="${c.id}">
-    <div class="chkhead">${conTile(c)}<div><div class="label">Abo-Check</div><b>Nutzt du ${esc(c.anbieter)} noch?</b></div></div>
-    <p class="chkcost"><span class="num">${eur(monthly(c))}</span> im Monat · <span class="num">${dayTxt(perDay(c))}</span> am Tag · <span class="num">${eur(monthly(c)*12)}</span> im Jahr</p>
+    <div class="chkhead">${conTile(c)}<div class="chkt"><span class="label">Abo-Check</span><b>Nutzt du ${esc(c.anbieter)} noch?</b><small class="num">${eur(monthly(c)*12)} im Jahr · ${dayTxt(perDay(c))} am Tag</small></div></div>
     <div class="chkbtns"><button type="button" class="btn primary" data-a="ja">Behalten</button><button type="button" class="btn" data-a="nein">Kündigen</button><button type="button" class="btn ghostbtn" data-a="spaeter">Später</button></div></div>`}
 function bindCheck(){const el=main.querySelector('[data-chk]');if(!el)return;const c=db.contracts.find(x=>x.id===el.dataset.chk);if(!c)return;
   el.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const a=b.dataset.a;delete c.checkSnooze;
@@ -1494,7 +1567,8 @@ function openReview(){
     <div class="snav"><button type="button" class="sprev" aria-label="Zurück"></button><button type="button" class="snext" aria-label="Weiter"></button></div>`;
   document.body.appendChild(ov);document.body.style.overflow='hidden';
   let n=0,timer=0;const bars=[...ov.querySelectorAll('.sbars i')],sl=ov.querySelector('.sslide');
-  const close=()=>{clearTimeout(timer);ov.remove();if(!root.firstElementChild)document.body.style.overflow=''};
+  const close=()=>{clearTimeout(timer);ov.remove();if(!root.firstElementChild)document.body.style.overflow='';layerClosed()};
+  layerOpened();
   const show=k=>{n=Math.max(0,Math.min(S.length-1,k));const s=S[n];clearTimeout(timer);
     ov.className='story '+s.bg;bars.forEach((b,j)=>{b.className=j<n?'done':j===n?'now':''});
     sl.innerHTML=`<div class="sk">${s.k}</div><div class="sbig">${s.big}</div><div class="ssub">${s.sub}</div>${s.end?'<button type="button" class="btn sdone">Schließen</button>':''}`;
@@ -1507,7 +1581,7 @@ function openReview(){
 }
 
 /* ---------- Aus anderen Apps geteilte Dateien (Share Target) ---------- */
-const INBOX='inbox-belegbox';
+const INBOX=NS+'inbox-belegbox';
 async function inboxFiles(){if(!('caches' in window))return [];
   const c=await caches.open(INBOX),ks=await c.keys(),out=[];
   for(const k of ks){const r=await c.match(k);if(!r)continue;const b=await r.blob();
@@ -1594,6 +1668,28 @@ function afterUnlock(){
   },motion()?950:60);
 }
 
+/* ---------- Zurück-Geste (Android): oberstes Fenster schließen statt die App ---------- */
+let histPushed=false,ignorePop=false;
+function topLayer(){
+  const V=document.getElementById('viewer');if(V&&!V.hidden)return 'viewer';
+  if(document.querySelector('.scanov'))return 'scan';
+  if(document.querySelector('.story'))return 'story';
+  if(document.querySelector('.pop'))return 'pop';
+  const sc=root.firstElementChild;if(sc&&!sc.classList.contains('closing'))return 'sheet';
+  if(fanOpen)return 'fan';return null}
+function layerOpened(){if(!histPushed&&key){try{history.pushState({belegbox:1},'');histPushed=true}catch(e){}}}
+function layerClosed(){setTimeout(()=>{if(histPushed&&!topLayer()){histPushed=false;ignorePop=true;try{history.back()}catch(e){ignorePop=false}}},0)}
+addEventListener('popstate',()=>{
+  if(ignorePop){ignorePop=false;return}
+  histPushed=false;const t=topLayer();
+  if(t==='viewer')closeViewer();
+  else if(t==='scan'||t==='story'){const el=document.querySelector(t==='scan'?'.scanov .x':'.story .sx');if(el)el.click()}
+  else if(t==='pop')closePop();
+  else if(t==='sheet')closeSheet();
+  else if(t==='fan')setFan(false);
+  setTimeout(()=>{if(topLayer())layerOpened()},300);
+});
+
 /* ---------- Tabs: Antippen oder Wischen ---------- */
 const TABS=['home','geraete','vertraege'];
 const ind=document.querySelector('nav.tabs .ind');
@@ -1623,10 +1719,12 @@ let fanOpen=false;
 function setFan(open){
   if(open===fanOpen)return;fanOpen=open;
   fab.classList.toggle('open',open);fab.setAttribute('aria-expanded',String(open));fab.setAttribute('aria-label',open?'Schließen':'Neu');
-  if(open){fan.hidden=false;void fan.offsetWidth;fan.classList.add('show');buzz(6)}
-  else{fan.classList.remove('show');setTimeout(()=>{if(!fanOpen)fan.hidden=true},motion()?260:0)}
+  if(open){fan.hidden=false;void fan.offsetWidth;fan.classList.add('show');buzz(6);layerOpened()}
+  else{fan.classList.remove('show');layerClosed();setTimeout(()=>{if(!fanOpen)fan.hidden=true},motion()?260:0)}
 }
 fab.onclick=()=>setFan(!fanOpen);
+let lastY=0;addEventListener('scroll',()=>{const y=window.scrollY;if(Math.abs(y-lastY)<8)return;
+  fab.classList.toggle('shrunk',y>lastY&&y>120);lastY=y},{passive:true});
 fan.addEventListener('click',e=>{const b=e.target.closest('[data-new]');setFan(false);if(!b)return;
   const k=b.dataset.new;if(k==='photo')openForm('d',null,true);else openForm(k)});
 
@@ -1712,6 +1810,7 @@ function tstep(){traf=0;
 }
 
 document.getElementById('menuBtn').onclick=()=>{setFan(false);openMenu()};
+if(IS_TEST){document.title='Belegbox TEST';const h=document.querySelector('.brand h1');if(h)h.insertAdjacentHTML('beforeend',' <span class="testtag">TEST</span>')}
 document.getElementById('searchBtn').onclick=()=>{if(!db)return;setFan(false);openSearch()};
 document.getElementById('lockBtn').onclick=()=>lock(true);
 boot();

@@ -1,8 +1,11 @@
 // Belegbox Service Worker – nur App-Dateien werden gecacht, nie Nutzerdaten.
 // Ausnahmen: aus anderen Apps geteilte Dateien liegen kurz im Eingangsfach (bis die App entsperrt ist und sie
 // verschlüsselt), und bei eingeschalteten Erinnerungen eine Liste von Terminen ohne Namen oder Beträge.
-const CACHE = 'belegbox-0.7.1.6';
-const INBOX = 'inbox-belegbox', SCHED = 'sched-belegbox';
+// Eigene Namen je Adresse: Live unter / wie bisher, eine Test-App unter /test/ mit Präfix „test-“
+const SCOPE_PATH = new URL(self.registration.scope).pathname;
+const NS = SCOPE_PATH === '/' ? '' : SCOPE_PATH.replace(/^\/|\/$/g, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-';
+const CACHE = NS + 'belegbox-0.8.0.7';
+const INBOX = NS + 'inbox-belegbox', SCHED = NS + 'sched-belegbox';
 const FILES = ['./', 'index.html', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/icon-180.png', 'icons/badge-96.png',
   'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
@@ -15,7 +18,7 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k.startsWith('belegbox-') && k !== CACHE).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => k.startsWith(NS + 'belegbox-') && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 

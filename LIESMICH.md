@@ -1,4 +1,4 @@
-# Belegbox – Test-App 0.7.1.6
+# Belegbox – Test-App 0.8.0.7
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
 
