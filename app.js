@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.7.4';
+const APP_VERSION='0.7.0.5';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -367,6 +367,7 @@ function showLock(closing){
   function opened(){
     V.classList.remove('busy');
     document.body.classList.remove('locked');lastAct=Date.now();tab='home';filter='alle';shown={};askPersist();buzz([10,40,18]);setTimeout(cleanFiles,5000);setTimeout(()=>ghQueue(0),3000);
+    afterUnlock();
     if(!motion()){L.innerHTML='';render('rise');return}
     L.classList.add('leaving');V.classList.add('open');
     setTimeout(()=>{if(tok!==lockTok||!db)return;
@@ -639,8 +640,8 @@ function conPill(c){
 }
 function upcoming(){
   const ev=[];
-  db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const i=contractInfo(c);if(!i.by)return;const n=days(i.by);
-    if(n<=60) ev.push({date:i.by,n,title:c.anbieter,sub:'Letzter Kündigungstag',kind:'c',id:c.id})});
+  db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const i=contractInfo(c);if(!i.by)return;const n=days(i.by);const w=weiterOn(c);
+    if(n<=60) ev.push({date:i.by,n,title:c.anbieter,sub:w?'Läuft bewusst weiter':'Letzter Kündigungstag',kind:'c',id:c.id,weiter:w})});
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['Gewährleistung',i.gew],['Herstellergarantie',i.gar]].forEach(([t,dt])=>{if(!dt)return;const n=days(dt);
       if(n>=0&&n<=90) ev.push({date:dt,n,title:d.name,sub:'Ende '+t,kind:'d',id:d.id})});
@@ -706,6 +707,8 @@ function render(mode){
   main.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>openDetail(el.dataset.kind,el.dataset.open,el));
   main.querySelectorAll('[data-filter]').forEach(el=>el.onclick=()=>{if(filter===el.dataset.filter)return;filter=el.dataset.filter;buzz(5);render('rows')});
   main.querySelectorAll('[data-goto]').forEach(el=>el.onclick=()=>goTab(el.dataset.goto));
+  if(tab==='home'){bindCheck();const rg=main.querySelector('#revGo');if(rg)rg.onclick=openReview}
+  updBadge();
   const sec=main.firstElementChild;
   sec.querySelectorAll('.list>.row').forEach((r,i)=>r.style.setProperty('--j',Math.min(i,10)));
   if(mode&&motion()){
@@ -729,7 +732,7 @@ function viewHome(){
   return `<section class="view">
     <div class="summary">
       <div><div class="label">Fixkosten pro Monat</div>
-        <div class="bigcost"><span class="num" data-count="mon" data-v="${mon}" data-f="eur">${eur(mon)}</span><small><span data-count="jahr" data-v="${mon*12}" data-f="eur">${eur(mon*12)}</span> im Jahr</small></div></div>
+        <div class="bigcost"><span class="num" data-count="mon" data-v="${mon}" data-f="eur">${eur(mon)}</span><small><span data-count="jahr" data-v="${mon*12}" data-f="eur">${eur(mon*12)}</span> im Jahr · ${dayTxt(mon*12/365)} am Tag</small></div></div>
       ${kats.length?`<div class="bars">${kats.map(([k,v])=>`<div class="bar"><span class="bl">${esc(k)}</span><div class="track"><div class="fill" style="width:${Math.max(4,v/max*100)}%"></div></div><span class="num">${eur(v)}</span></div>`).join('')}</div>`:''}
       <div class="facts">
         <button type="button" class="fact" data-goto="vertraege"><b class="num" data-count="akt" data-v="${act.length}">${act.length}</b><span>Verträge aktiv</span></button>
@@ -737,11 +740,13 @@ function viewHome(){
         <button type="button" class="fact${ohne?' warn':''}" data-goto="geraete"><b class="num" data-count="ohne" data-v="${ohne}">${ohne}</b><span>ohne Beleg</span></button>
       </div>
     </div>
+    ${reviewSeason()?`<button type="button" class="revbanner" id="revGo"><span class="label">Jahresrückblick</span><b>Dein Belegbox-Jahr ${reviewYear()} ist da</b><span>Ansehen →</span></button>`:''}
+    ${checkCard()}
     <div class="sechead"><h2>Demnächst fällig</h2><span class="label">nächste 90 Tage</span></div>
     <div class="list">${ev.length?ev.map(e=>`<button type="button" class="row" data-kind="${e.kind}" data-open="${e.id}">
         <div class="date"><b>${e.date.getDate()}</b><span>${e.date.toLocaleDateString('de-DE',{month:'short'}).replace('.','')}</span></div>
         <div class="evmain">${evMini(e)}<div style="min-width:0"><div class="t">${esc(e.title)}</div><div class="s">${esc(e.sub)}</div></div></div>
-        <span class="pill ${e.n<=14?'p-crit':e.n<=45?'p-warn':'p-ok'}">${inDays(e.n)}</span></button>`).join('')
+        <span class="pill ${e.weiter?'p-none':e.n<=14?'p-crit':e.n<=45?'p-warn':'p-ok'}">${e.weiter?'läuft weiter':inDays(e.n)}</span></button>`).join('')
       :`<div class="empty">Keine Fristen in den nächsten 90 Tagen.</div>`}</div>
     ${ohne?`<div class="sechead"><h2>Ohne Nachweis</h2><button type="button" class="ghost" data-goto="geraete">Alle Geräte</button></div>
     <div class="list">${db.devices.filter(d=>d.nachweis==='keiner').map(devRow).join('')}</div>
@@ -783,8 +788,8 @@ function viewContracts(){
     <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
     <div class="list">${list.length?list.map(c=>`<button type="button" class="row" data-kind="c" data-open="${c.id}">
       ${conTile(c)}
-      <div class="main"><div class="t">${esc(c.anbieter)}${c.notiz?NOTEICON:''}</div><div class="s">${esc(c.kategorie)}${Number(c.intervall)!==1?' · '+eur(price(c))+' '+(INTERVALL[c.intervall]||''):''}</div><div class="pl">${conPill(c)}</div></div>
-      <span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')
+      <div class="main"><div class="t">${esc(c.anbieter)}${c.notiz?NOTEICON:''}</div><div class="s">${esc(c.kategorie)}${Number(c.intervall)!==1?' · '+eur(price(c))+' '+(INTERVALL[c.intervall]||''):''}</div><div class="pl">${weiterOn(c)?'<span class="pill p-none">Läuft bewusst weiter</span>':conPill(c)}</div></div>
+      <span class="amt num">${eur(monthly(c))}<small>/Monat</small><small class="pd">${dayTxt(perDay(c))}/Tag</small></span></button>`).join('')
       :`<div class="empty">Noch keine Verträge. Tippe auf „Neu“ und trage Kosten, Laufzeit und Kündigungsfrist ein.</div>`}</div>
   </section>`;
 }
@@ -883,9 +888,11 @@ function openDetail(kind,id,from){
           </dl></div>`)(rateInfo(d))}
       ${noteBlock(d)}
       ${docSection(d)}
+      <div class="tools"><button type="button" class="tool" id="claim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.7-7.7a4 4 0 0 0-2-2z"/></svg>Mangel melden</button></div>
       <div class="actions two"><button type="button" class="btn primary" id="edit">Bearbeiten</button><button type="button" class="btn danger" id="del">Löschen</button></div>`,
       s=>{const pr=s.querySelector('.prot');if(pr&&motion())pr.classList.add('enter');bindDocs(s,d);
           const rs=s.querySelector('[data-rshow]');if(rs){let o=false;rs.onclick=()=>{o=!o;s.querySelector('[data-rmask]').textContent=o?d.rate.vnr:maskVal(d.rate.vnr);rs.textContent=o?'Verbergen':'Anzeigen'}}
+          s.querySelector('#claim').onclick=()=>openClaim(d);
           s.querySelector('#edit').onclick=()=>openForm('d',d);armDelete(s,()=>{(d.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.devices=db.devices.filter(x=>x.id!==id)})},from);
   } else {
     const c=db.contracts.find(x=>x.id===id); if(!c)return; const i=contractInfo(c);
@@ -893,12 +900,13 @@ function openDetail(kind,id,from){
     const hero=c.status==='gekuendigt'
       ?`<div class="hero h-none"><span class="hl">Gekündigt</span><b class="num">endet ${fmtD(i.end)}</b><span class="hs">${inDays(days(i.end))}${c.gekuendigtAm?' · gekündigt am '+fmtD(parse(c.gekuendigtAm)):''}</span></div>`
       :i.offen?`<div class="hero h-ok"><span class="hl">Jederzeit kündbar</span><b class="num">${FRIST(c.frist)}</b><span class="hs">Bei Kündigung heute endet er am ${fmtD(i.end)}</span></div>`
+      :i.by&&weiterOn(c)?`<div class="hero h-none"><span class="hl">Läuft bewusst weiter</span><b class="num">Verlängerung am ${fmtD(i.end)}</b><span class="hs">um ${PER(c.verl)} · für die nächste Laufzeit erinnert dich die App wieder</span></div>`
       :i.by?`<div class="hero ${cn<=14?'h-crit':cn<=45?'h-warn':'h-ok'}"><span class="hl">Spätestens kündigen</span><b class="num">${fmtD(i.by)}</b><span class="hs">${inDays(cn)} · sonst Verlängerung am ${fmtD(i.end)} um ${PER(c.verl)}${verl}</span></div>`
       :`<div style="margin:-6px 0 14px">${conPill(c)}</div>`;
     openSheet(head((c.logo?`<img class="hlogo" src="${c.logo}" alt="">`:'')+esc(c.anbieter))+hero+`
       <dl class="kv">
         <dt>Kategorie</dt><dd>${esc(c.kategorie)}</dd>
-        <dt>Kosten</dt><dd><span class="num">${eur(price(c))}</span> ${INTERVALL[c.intervall]||''}${Number(c.intervall)!==1?` <span class="muted">(${eur(monthly(c))} pro Monat)</span>`:''}</dd>
+        <dt>Kosten</dt><dd><span class="num">${eur(price(c))}</span> ${INTERVALL[c.intervall]||''}${Number(c.intervall)!==1?` <span class="muted">(${eur(monthly(c))} pro Monat)</span>`:''}<br><span class="muted">${dayTxt(perDay(c))} am Tag · ${eur(monthly(c)*12)} im Jahr</span></dd>
         ${(()=>{const p=priceChange(c);if(!p)return '';const past=days(p.date)<=0;
           return `<dt>Preisänderung</dt><dd>${past?`seit ${fmtD(p.date)} ${eur(p.preis)} (vorher ${eur(c.kosten)})`:`ab ${fmtD(p.date)} ${eur(p.preis)} statt ${eur(c.kosten)} <span class="pill ${p.preis>c.kosten?'p-warn':'p-ok'}">${p.preis>c.kosten?'teurer':'günstiger'}</span>`}</dd>`})()}
         ${c.beginn?`<dt>Beginn</dt><dd>${fmtD(parse(c.beginn))}</dd>`:''}
@@ -908,6 +916,10 @@ function openDetail(kind,id,from){
       </dl>
       ${noteBlock(c)}
       ${docSection(c)}
+      ${c.status!=='gekuendigt'?`<div class="tools">
+        <button type="button" class="tool" id="letter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>Kündigung schreiben</button>
+        ${i.by?`<button type="button" class="tool" id="weiter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${weiterOn(c)?'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/>':'<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v4.5h-4.5"/>'}</svg>${weiterOn(c)?'Wieder erinnern':'Weiterlaufen lassen'}</button>`:''}
+      </div>`:''}
       <div class="actions two">
         <button type="button" class="btn primary" id="edit">Bearbeiten</button>
         ${c.status!=='gekuendigt'?'<button type="button" class="btn" id="cancel">Gekündigt ✓</button>':'<button type="button" class="btn" id="cancel">Wieder aktiv</button>'}
@@ -919,8 +931,11 @@ function openDetail(kind,id,from){
             try{await navigator.clipboard.writeText(c[f]);buzz(8);toast((f==='kundennr'?'Kundennummer':'Vertragsnummer')+' kopiert.')}
             catch(x){toast('Kopieren hat nicht geklappt. Tippe auf „Anzeigen“ und markiere die Nummer.')}});
           s.querySelector('#dup').onclick=()=>openForm('c',null,false,c);
+          const lt=s.querySelector('#letter');if(lt)lt.onclick=()=>openLetter(c);
+          const wt=s.querySelector('#weiter');if(wt)wt.onclick=()=>{const on=weiterOn(c);if(on)delete c.weiter;else c.weiter=iso(contractInfo(c).end);save();render();openDetail('c',id);
+            buzz(8);toast(on?'Die App erinnert dich wieder an die Kündigungsfrist.':`Okay, ${c.anbieter} läuft bis ${fmtD(contractInfo(c).end)} plus ${PER(c.verl)} weiter. Danach erinnere ich dich wieder.`)};
           s.querySelector('#edit').onclick=()=>openForm('c',c);
-          s.querySelector('#cancel').onclick=()=>{const was=c.status==='gekuendigt';c.status=was?'aktiv':'gekuendigt';if(was)delete c.gekuendigtAm;else c.gekuendigtAm=iso(T0);save();render();openDetail('c',id);
+          s.querySelector('#cancel').onclick=()=>{const was=c.status==='gekuendigt';c.status=was?'aktiv':'gekuendigt';if(was)delete c.gekuendigtAm;else{c.gekuendigtAm=iso(T0);delete c.weiter}save();render();openDetail('c',id);
             if(was){buzz(8);toast('Wieder als aktiv markiert.')}
             else{celebrate('Gekündigt');toast(`Stark! Ab dem ${fmtD(contractInfo(c).end)} sparst du ${eur(monthly(c)*12)} im Jahr.`)}};
           armDelete(s,()=>{(c.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.contracts=db.contracts.filter(x=>x.id!==id)})},from);
@@ -951,7 +966,7 @@ function openForm(kind,item,camera,tpl){
       <label class="field"><span>Standort</span><input id="f_raum" placeholder="Küche"></label></div>
     <div class="grid2"><label class="field"><span>Hersteller</span><input id="f_her"></label>
       <label class="field"><span>Modell</span><input id="f_mod"></label></div>
-    <label class="field"><span>Seriennummer</span><input id="f_sn" placeholder="steht auf dem Typenschild"></label>
+    <div class="field"><span><label for="f_sn">Seriennummer</label></span><div class="snrow"><input id="f_sn" placeholder="steht auf dem Typenschild">${canScan()?'<button type="button" class="btn scanbtn" id="f_scan" aria-label="Seriennummer scannen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 9v6M10 9v6M13 9v6M17 9v6"/></svg>Scannen</button>':''}</div></div>
     <div class="grid2"><label class="field"><span>Kaufdatum *</span><input id="f_kauf" type="date" required value="${iso(T0)}"></label>
       <label class="field"><span>Preis (€)</span><input id="f_preis" type="number" step="0.01" min="0" inputmode="decimal"></label></div>
     <label class="check"><input id="f_ges" type="checkbox"> Kaufdatum nur geschätzt</label>
@@ -1061,6 +1076,7 @@ function openForm(kind,item,camera,tpl){
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
+    const sb=s.querySelector('#f_scan');if(sb)sb.onclick=()=>openScanner(v=>{const f=s.querySelector('#f_sn');f.value=v;buzz(10);toast('Seriennummer übernommen.')});
     if(kind==='d'){ // Neues Foto: nur auf Nachfrage als Kaufnachweis werten, nie automatisch
       const fi=s.querySelector('#f_foto'),ask=s.querySelector('#f_ask'),na=s.querySelector('#f_nach');
       if(!src)na.value='keiner'; // neues Gerät: erst mit Beleg gilt es als nachgewiesen
@@ -1144,6 +1160,13 @@ function openMenu(){
       <label class="field" style="margin-top:12px"><span>Zugangsschlüssel (github_pat_…)</span><input id="gh_t" type="password" autocomplete="off"></label>
       <p class="hint" id="gh_msg" hidden></p>
       <div class="actions" style="margin:10px 0 18px"><button type="button" class="btn primary" id="gh_go">Verbinden & sichern</button></div>`}
+    <div class="label" style="margin-bottom:8px">Erinnerungen</div>
+    ${'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="hint" style="margin-bottom:10px">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die Belegbox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
+      <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="btn" id="rmOff">Ausschalten</button></div>`
+    :`<p class="hint" style="margin-bottom:10px">Die Belegbox meldet sich, wenn in den nächsten 14 Tagen eine Kündigungsfrist oder Garantie abläuft – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
+      <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="rmOn">Einschalten</button></div><p class="hint" id="rmMsg" hidden></p><div style="height:12px"></div>`):''}
+    <div class="label" style="margin-bottom:8px">Jahresrückblick</div>
+    <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="revM">Mein Jahr ${reviewYear()}${T0.getMonth()<11&&reviewYear()===T0.getFullYear()?' (bis heute)':''} ansehen</button></div>
     <div class="label" style="margin-bottom:8px">Kalender</div>
     <p class="hint" style="margin-bottom:10px">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
     <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
@@ -1193,6 +1216,12 @@ function openMenu(){
      const ghF=s.querySelector('#ghForce');if(ghF)ghF.onclick=async()=>{await ghSync(true);openMenu();if(!ghStat.err)celebrate('Gesichert')};
      const ghX=s.querySelector('#ghOff');if(ghX){let armed=false;ghX.onclick=()=>{if(!armed){armed=true;ghX.classList.add('danger','sure');ghX.textContent='Wirklich trennen?';return}
        const m=Object.assign({},db.meta);delete m.gh;db.meta=m;setGhStat({err:'',at:0,conflict:false});save();openMenu();toast('GitHub getrennt. Im Repo bleibt alles liegen.')}}
+     s.querySelector('#revM').onclick=()=>{closeSheet(false);openReview()};
+     const rmOn=s.querySelector('#rmOn');if(rmOn)rmOn.onclick=async()=>{const m=s.querySelector('#rmMsg');rmOn.disabled=true;
+       try{const bg=await remindOn();openMenu();celebrate('Erinnerungen an');toast(bg?'Erinnerungen sind an – auch bei geschlossener App.':'Erinnerungen sind an. Dein Browser prüft beim Öffnen der App.')}
+       catch(x){rmOn.disabled=false;m.textContent=x.message;m.style.color='var(--crit)';m.hidden=false}};
+     const rmOff=s.querySelector('#rmOff');if(rmOff)rmOff.onclick=async()=>{await remindOff();openMenu();toast('Erinnerungen ausgeschaltet.')};
+     const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('Belegbox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/icon-192.png',badge:'icons/badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
@@ -1204,6 +1233,330 @@ function openMenu(){
      s.querySelector('#bkYes').onclick=()=>{if(pending)saving.then(()=>restoreVault(pending))};
      s.querySelector('#m_ex').onclick=()=>{const sm=samples();db.devices=db.devices.filter(x=>!x.ex).concat(sm.devices);db.contracts=db.contracts.filter(x=>!x.ex).concat(sm.contracts);save();closeSheet();render('rise')};
      armDelete(s,()=>{db={devices:[],contracts:[]};fileClear().catch(()=>{})})});
+}
+
+/* ================= Neue Funktionen (0.7) ================= */
+
+/* ---------- Kosten pro Tag ---------- */
+const perDay=c=>monthly(c)*12/365;
+const dayTxt=v=>v<1?Math.round(v*100)+' Cent':eur(v);
+
+/* ---------- Vertrag bewusst weiterlaufen lassen (gilt nur für die aktuelle Laufzeit) ---------- */
+function weiterOn(c){if(!c.weiter||c.status==='gekuendigt')return false;const i=contractInfo(c);return !i.offen&&c.weiter===iso(i.end)}
+
+/* ---------- Fristen der nächsten 14 Tage: Zähler am Icon und Erinnerungen ---------- */
+function dueSoon(){return db?upcoming().filter(e=>!e.weiter&&e.n>=0&&e.n<=14):[]}
+function updBadge(){
+  if(!db)return;const n=dueSoon().length;
+  try{if(navigator.setAppBadge){n?navigator.setAppBadge(n):navigator.clearAppBadge()}}catch(e){}
+  writeSched();
+}
+/* Für Erinnerungen bei geschlossener App: nur Datum und Art, keine Namen, keine Beträge */
+const SCHED='sched-belegbox';
+let schedLast='';
+async function writeSched(){
+  if(!('caches' in window)||!db)return;
+  try{const c=await caches.open(SCHED);
+    if(!(db.meta&&db.meta.remind)){if(schedLast!=='off'){schedLast='off';await c.delete('./__sched')}return}
+    const items=[];
+    db.contracts.forEach(k=>{if(k.status==='gekuendigt'||weiterOn(k))return;const i=contractInfo(k);if(i.by&&days(i.by)>=0)items.push({d:iso(i.by),t:'k'});
+      const p=priceChange(k);if(p&&days(p.date)>=0)items.push({d:iso(p.date),t:'p'})});
+    db.devices.forEach(d=>{const i=deviceInfo(d);[i.gew,i.gar].forEach(x=>{if(x&&days(x)>=0)items.push({d:iso(x),t:'g'})})});
+    items.sort((a,b)=>a.d<b.d?-1:1);
+    const body=JSON.stringify({items});if(body===schedLast)return;schedLast=body;
+    await c.put('./__sched',new Response(body,{headers:{'content-type':'application/json'}}));
+  }catch(e){}
+}
+async function remindPing(force){
+  if(!db||!(db.meta&&db.meta.remind)||!('serviceWorker' in navigator))return;
+  try{await writeSched();const r=await navigator.serviceWorker.ready;if(r.active)r.active.postMessage({type:'REMIND',force:!!force})}catch(e){}
+}
+async function remindOn(){
+  if(!('Notification' in window)||!('serviceWorker' in navigator))throw new Error('Dieser Browser kann keine Benachrichtigungen anzeigen.');
+  const p=await Notification.requestPermission();
+  if(p!=='granted')throw new Error('Benachrichtigungen sind für die Belegbox blockiert. Erlaube sie in den Android-Einstellungen unter Apps → Chrome bzw. Belegbox → Benachrichtigungen.');
+  const reg=await navigator.serviceWorker.ready;let bg=false;
+  try{if(reg.periodicSync){await reg.periodicSync.register('belegbox-fristen',{minInterval:12*3600e3});bg=true}}catch(e){bg=false}
+  db.meta=Object.assign({},db.meta,{remind:true,remindBg:bg});await save();schedLast='';await remindPing(true);return bg;
+}
+async function remindOff(){
+  db.meta=Object.assign({},db.meta,{remind:false});await save();
+  try{const reg=await navigator.serviceWorker.ready;if(reg.periodicSync)await reg.periodicSync.unregister('belegbox-fristen');
+    (await reg.getNotifications({tag:'belegbox-fristen'})).forEach(n=>n.close())}catch(e){}
+  await writeSched();
+}
+
+/* ---------- Kleine Helfer ---------- */
+async function copyText(t,okMsg){try{await navigator.clipboard.writeText(t);buzz(8);toast(okMsg||'Kopiert.');return true}
+  catch(x){toast('Kopieren hat nicht geklappt. Markiere den Text und kopiere ihn von Hand.');return false}}
+async function shareText(title,text,files){
+  if(!navigator.share){return copyText(text,'Teilen geht hier nicht – der Text ist kopiert.')}
+  try{if(files&&files.length&&navigator.canShare&&navigator.canShare({files})){await navigator.share({title,text,files});return true}
+    await navigator.share({title,text});return true}
+  catch(e){if(e&&e.name==='AbortError')return false;return copyText(text,'Teilen ging nicht – der Text ist kopiert.')}}
+const fmtLong=d=>d.toLocaleDateString('de-DE',{day:'numeric',month:'long',year:'numeric'});
+
+/* ---------- Kündigungsschreiben ---------- */
+function openLetter(c){
+  const a=Object.assign({name:'',str:'',ort:''},db.meta&&db.meta.absender);
+  const i=contractInfo(c);
+  openSheet(head('Kündigung schreiben')+`
+    <p class="hint" style="margin:-6px 0 14px">Für <b>${esc(c.anbieter)}</b>. Viele Anbieter haben auf ihrer Webseite einen Knopf „Verträge hier kündigen“ (Pflicht seit Juli 2022) – dort kannst du den Text einfügen. Sonst per E-Mail oder Brief.</p>
+    <div class="label" style="margin-bottom:6px">Absender</div>
+    <div class="lgrid">
+      <label class="field"><span>Name</span><input id="l_name" autocomplete="name" value="${esc(a.name)}"></label>
+      <label class="field"><span>Straße und Hausnummer</span><input id="l_str" autocomplete="street-address" value="${esc(a.str)}"></label>
+      <label class="field"><span>PLZ und Ort</span><input id="l_ort" autocomplete="off" value="${esc(a.ort)}"></label>
+    </div>
+    <label class="check" style="margin:10px 0"><input id="l_werb" type="checkbox" checked> Werbung und Rückgewinnungsanrufen widersprechen</label>
+    <div class="letter" id="l_txt"></div>
+    <div class="actions two" style="margin-top:14px">
+      <button type="button" class="btn primary" id="l_share">Teilen</button>
+      <button type="button" class="btn" id="l_copy">Text kopieren</button>
+      ${c.status!=='gekuendigt'?'<button type="button" class="btn wide2" id="l_done">Abgeschickt – als gekündigt markieren</button>':''}
+    </div>`,
+  s=>{
+    const val=id=>s.querySelector('#'+id).value.trim();
+    const build=()=>{const n=val('l_name'),st=val('l_str'),o=val('l_ort');const ort=o.replace(/^\d{4,5}\s*/,'');
+      const L=[];if(n)L.push(n);if(st)L.push(st);if(o)L.push(o);if(L.length)L.push('');
+      L.push('An: '+c.anbieter,'');
+      L.push((ort?ort+', ':'')+fmtLong(T0),'');
+      L.push('Kündigung meines Vertrags');
+      if(c.kundennr)L.push('Kundennummer: '+c.kundennr);
+      if(c.vertragsnr)L.push('Vertragsnummer: '+c.vertragsnr);
+      L.push('','Sehr geehrte Damen und Herren,','',
+        `hiermit kündige ich meinen Vertrag fristgerecht zum nächstmöglichen Zeitpunkt. Nach meinen Unterlagen ist das der ${fmtD(i.end)}.`,'',
+        'Bitte bestätigen Sie mir die Kündigung und das Vertragsende schriftlich.');
+      if(s.querySelector('#l_werb').checked)L.push('','Der Nutzung meiner Daten für Werbezwecke widerspreche ich. Von Anrufen zur Rückgewinnung bitte ich abzusehen.');
+      L.push('','Mit freundlichen Grüßen',n||'');
+      return L.join('\n').replace(/\n+$/,'')};
+    const out=s.querySelector('#l_txt');const upd=()=>{out.textContent=build()};
+    s.addEventListener('input',upd);s.addEventListener('change',upd);upd();
+    const keep=()=>{const na={name:val('l_name'),str:val('l_str'),ort:val('l_ort')};
+      const old=db.meta&&db.meta.absender||{};if(na.name!==old.name||na.str!==old.str||na.ort!==old.ort){db.meta=Object.assign({},db.meta,{absender:na});save()}};
+    s.querySelector('#l_copy').onclick=()=>{keep();copyText(build(),'Kündigung kopiert.')};
+    s.querySelector('#l_share').onclick=()=>{keep();shareText('Kündigung '+c.anbieter,build())};
+    const dn=s.querySelector('#l_done');
+    if(dn)dn.onclick=()=>{keep();c.status='gekuendigt';c.gekuendigtAm=iso(T0);delete c.weiter;save();render();openDetail('c',c.id);
+      celebrate('Gekündigt');toast(`Stark! Ab dem ${fmtD(contractInfo(c).end)} sparst du ${eur(monthly(c)*12)} im Jahr.`)};
+  });
+}
+
+/* ---------- Garantiefall: alles für die Reklamation in einem Paket ---------- */
+function openClaim(d){
+  const i=deviceInfo(d),gewOk=days(i.gew)>=0,garOk=i.gar&&days(i.gar)>=0,docs=d.docs||[];
+  const an=gewOk?{wer:d.haendler||'den Händler',warum:'gesetzliche Gewährleistung',hint:`Die Gewährleistung läuft bis ${fmtD(i.gew)}. Ansprechpartner ist der Händler, bei dem du gekauft hast.`}
+    :garOk?{wer:d.hersteller||'den Hersteller',warum:'Herstellergarantie',hint:`Die Gewährleistung ist abgelaufen, aber die Herstellergarantie läuft noch bis ${fmtD(i.gar)}. Wende dich an den Hersteller.`}
+    :{wer:d.haendler||d.hersteller||'den Händler',warum:'Kulanz',hint:'Gewährleistung und Garantie sind abgelaufen. Fragen kostet trotzdem nichts – viele Hersteller helfen aus Kulanz.'};
+  openSheet(head('Mangel melden')+`
+    <div class="hero ${gewOk||garOk?'h-ok':'h-none'}"><span class="hl">An ${esc(an.wer)}</span><b>${an.warum}</b><span class="hs">${an.hint}</span></div>
+    <label class="field"><span>Was ist kaputt?</span><textarea id="m_was" rows="3" placeholder="z. B. Display flackert, Gerät schaltet sich nach wenigen Minuten ab"></textarea></label>
+    <label class="field" style="margin-top:10px"><span>Seit wann?</span><input id="m_seit" type="date" value="${iso(T0)}"></label>
+    ${docs.length?`<label class="check" style="margin:10px 0 0"><input id="m_docs" type="checkbox" checked> ${docs.length===1?'Beleg':docs.length+' Belege'} beim Teilen anhängen</label>`
+      :`<p class="hint" style="margin-top:10px">Zu diesem Gerät ist kein Beleg gespeichert. ${d.nachweis&&d.nachweis!=='keiner'?'Häng deinen Nachweis ('+NACHWEIS[d.nachweis]+') selbst an.':'Such vorher nach Bestellmail oder Kontoauszug.'}</p>`}
+    <div class="letter" id="m_txt" style="margin-top:12px"></div>
+    <div class="actions two" style="margin-top:14px"><button type="button" class="btn primary" id="m_share">${docs.length?'Mit Belegen teilen':'Teilen'}</button><button type="button" class="btn" id="m_copy">Text kopieren</button></div>
+    <p class="hint" id="m_msg" hidden></p>`,
+  s=>{
+    const build=()=>{const was=s.querySelector('#m_was').value.trim(),seit=s.querySelector('#m_seit').value;
+      const L=['Reklamation – '+an.warum,'',
+        'Gerät: '+[d.hersteller,d.modell].filter(Boolean).join(' ')+(d.name&&!(d.modell||'').includes(d.name)?' ('+d.name+')':'')];
+      if(d.sn)L.push('Seriennummer: '+d.sn);
+      L.push('Kaufdatum: '+(d.geschaetzt?'ca. ':'')+fmtD(i.kauf)+(d.haendler?' bei '+d.haendler:'')+(d.preis?', Preis '+eur(d.preis):''));
+      L.push('','Mangel: '+(was||'…'));
+      if(seit)L.push('Aufgetreten seit: '+fmtD(parse(seit)));
+      L.push('');
+      if(gewOk){L.push('Ich bitte im Rahmen der gesetzlichen Gewährleistung um Nachbesserung oder Ersatzlieferung.');
+        if(seit&&(parse(seit)-i.kauf)/864e5<=365)L.push('Der Mangel ist innerhalb eines Jahres nach dem Kauf aufgetreten. Nach § 477 BGB wird daher vermutet, dass er schon bei Übergabe vorlag.')}
+      else if(garOk)L.push(`Ich bitte um Reparatur oder Austausch im Rahmen Ihrer Herstellergarantie (gültig bis ${fmtD(i.gar)}).`);
+      else L.push('Ich bitte um eine Lösung auf Kulanz.');
+      L.push('Der Kaufbeleg liegt bei. Bitte teilen Sie mir das weitere Vorgehen mit.','','Mit freundlichen Grüßen');
+      const n=db.meta&&db.meta.absender&&db.meta.absender.name;if(n)L.push(n);
+      return L.join('\n')};
+    const out=s.querySelector('#m_txt');const upd=()=>{out.textContent=build()};s.addEventListener('input',upd);s.addEventListener('change',upd);upd();
+    s.querySelector('#m_copy').onclick=()=>copyText(build(),'Reklamation kopiert.');
+    s.querySelector('#m_share').onclick=async()=>{const b=s.querySelector('#m_share'),m=s.querySelector('#m_msg');
+      const want=s.querySelector('#m_docs')&&s.querySelector('#m_docs').checked;let files=[];
+      if(want){b.disabled=true;b.textContent='Belege werden vorbereitet …';
+        for(const x of docs){try{files.push(new File([await openDoc(x.id)],x.name,{type:x.type}))}catch(e){}}
+        b.disabled=false;b.textContent='Mit Belegen teilen';
+        if(files.length<docs.length){m.textContent='Nicht alle Belege konnten geöffnet werden.';m.hidden=false}}
+      shareText('Reklamation '+(d.name||''),build(),files)};
+    s.querySelector('#m_was').focus({preventScroll:true});
+  });
+}
+
+/* ---------- Seriennummer per Kamera scannen (Barcode / QR) ---------- */
+const canScan=()=>'BarcodeDetector' in window&&!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+async function openScanner(onPick){
+  const ov=document.createElement('div');ov.className='scanov';ov.setAttribute('role','dialog');ov.setAttribute('aria-modal','true');
+  ov.innerHTML=`<div class="scanhead"><b>Seriennummer scannen</b><button type="button" class="x" aria-label="Schließen">✕</button></div>
+    <div class="scanbox"><video playsinline muted autoplay></video><div class="scanframe"></div></div>
+    <p class="scanmsg">Halte die Kamera auf den Barcode oder QR-Code am Typenschild.</p><div class="scanhits"></div>`;
+  document.body.appendChild(ov);
+  const video=ov.querySelector('video'),msg=ov.querySelector('.scanmsg'),hits=ov.querySelector('.scanhits');
+  let stream=null,alive=true,timer=0;const seen=new Map();
+  const close=()=>{alive=false;clearTimeout(timer);if(stream)stream.getTracks().forEach(t=>t.stop());ov.remove()};
+  ov.querySelector('.x').onclick=close;
+  try{
+    const fm=await BarcodeDetector.getSupportedFormats().catch(()=>[]);
+    const det=new BarcodeDetector(fm.length?{formats:fm}:undefined);
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    if(!alive){stream.getTracks().forEach(t=>t.stop());return}
+    video.srcObject=stream;await video.play().catch(()=>{});
+    const tick=async()=>{if(!alive)return;
+      try{if(video.readyState>=2){const r=await det.detect(video);
+        r.forEach(b=>{const v=String(b.rawValue||'').trim();if(!v||v.length>80||seen.has(v))return;seen.set(v,b.format);buzz(8);
+          const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.innerHTML=`<span class="code">${esc(v)}</span><small>${esc(String(b.format).replace(/_/g,' '))} · übernehmen</small>`;
+          btn.onclick=()=>{onPick(v);close()};hits.appendChild(btn);
+          msg.textContent=seen.size>1?'Mehrere Codes gefunden – tippe die Seriennummer an.':'Gefunden. Tippe zum Übernehmen – oder warte auf weitere Codes.'})}}catch(e){}
+      timer=setTimeout(tick,250)};
+    tick();
+  }catch(e){msg.textContent=e&&e.name==='NotAllowedError'?'Die Kamera ist blockiert. Erlaube den Kamerazugriff für die Belegbox und versuch es erneut.':'Die Kamera konnte nicht gestartet werden.';msg.classList.add('err')}
+}
+
+/* ---------- Suche über alles ---------- */
+function openSearch(){
+  openSheet(head('Suchen')+`<label class="field srchf"><span class="sr">Suchbegriff</span><input id="q" type="search" placeholder="Name, Seriennummer, Notiz, Kundennummer …" autocomplete="off" enterkeyhint="search"></label>
+    <div id="qres" class="qres"></div>`,
+  s=>{const q=s.querySelector('#q'),R=s.querySelector('#qres');
+    const fieldsD=d=>[['',d.name],['',d.hersteller],['',d.modell],['Seriennr.',d.sn],['',d.raum],['',d.haendler],['',d.kategorie],['Notiz',d.notiz],['',(d.docs||[]).map(x=>x.name).join(' ')]];
+    const fieldsC=c=>[['',c.anbieter],['',c.kategorie],['Kundennr.',c.kundennr],['Vertragsnr.',c.vertragsnr],['Notiz',c.notiz],['',(c.docs||[]).map(x=>x.name).join(' ')]];
+    const hitIn=(fs,terms)=>{const all=fs.map(f=>String(f[1]||'').toLowerCase()).join(' \u0001 ');if(!terms.every(t=>all.includes(t)))return null;
+      const f=fs.find(f=>f[0]&&terms.some(t=>String(f[1]||'').toLowerCase().includes(t)));return f?f:true};
+    const snip=(f,terms)=>{if(f===true)return '';const v=String(f[1]);const p=v.toLowerCase().indexOf(terms.find(t=>v.toLowerCase().includes(t)));
+      const a=Math.max(0,p-24),txt=(a?'…':'')+v.slice(a,p+40)+(p+40<v.length?'…':'');
+      return `<span class="qs">${esc(f[0])}: ${f[0]==='Kundennr.'||f[0]==='Vertragsnr.'?esc(maskVal(v)):esc(txt)}</span>`};
+    const draw=()=>{const terms=q.value.toLowerCase().split(/\s+/).filter(Boolean);
+      if(!terms.length){R.innerHTML=`<p class="hint qhint">${db.devices.length} Geräte und ${db.contracts.length} Verträge durchsuchbar – auch Seriennummern, Notizen, Kunden­nummern und Dateinamen von Belegen.</p>`;return}
+      const D=[],C=[];
+      db.devices.forEach(d=>{const h=hitIn(fieldsD(d),terms);if(h)D.push([d,h])});
+      db.contracts.forEach(c=>{const h=hitIn(fieldsC(c),terms);if(h)C.push([c,h])});
+      if(!D.length&&!C.length){R.innerHTML='<p class="hint qhint">Nichts gefunden.</p>';return}
+      R.innerHTML=(D.length?`<div class="label">Geräte</div><div class="list">${D.slice(0,30).map(([d,h])=>`<button type="button" class="row" data-qk="d" data-qi="${d.id}">${tileFor(d)}<div class="main"><div class="t">${esc(d.name)}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}</div>${snip(h,terms)}</div><span></span></button>`).join('')}</div>`:'')
+        +(C.length?`<div class="label">Verträge</div><div class="list">${C.slice(0,30).map(([c,h])=>`<button type="button" class="row" data-qk="c" data-qi="${c.id}">${conTile(c)}<div class="main"><div class="t">${esc(c.anbieter)}</div><div class="s">${esc(c.kategorie)}</div>${snip(h,terms)}</div><span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')}</div>`:'');
+      R.querySelectorAll('[data-qi]').forEach(b=>b.onclick=()=>openDetail(b.dataset.qk,b.dataset.qi))};
+    q.addEventListener('input',draw);draw();setTimeout(()=>q.focus(),motion()?320:0);
+  });
+}
+
+/* ---------- Abo-Check alle 3 Monate ---------- */
+const CHECK_KAT=['Streaming','Software','Fitness','Sonstiges'];
+function checkDue(){
+  return db.contracts.filter(c=>{if(c.status==='gekuendigt'||!CHECK_KAT.includes(c.kategorie))return false;
+    if(c.checkSnooze&&days(parse(c.checkSnooze))>0)return false;
+    const base=c.check||c.beginn;return !base||days(parse(base))<=-90})
+    .sort((a,b)=>monthly(b)-monthly(a))[0]||null}
+function checkCard(){const c=checkDue();if(!c)return '';
+  return `<div class="chk" data-chk="${c.id}">
+    <div class="chkhead">${conTile(c)}<div><div class="label">Abo-Check</div><b>Nutzt du ${esc(c.anbieter)} noch?</b></div></div>
+    <p class="chkcost"><span class="num">${eur(monthly(c))}</span> im Monat · <span class="num">${dayTxt(perDay(c))}</span> am Tag · <span class="num">${eur(monthly(c)*12)}</span> im Jahr</p>
+    <div class="chkbtns"><button type="button" class="btn primary" data-a="ja">Behalten</button><button type="button" class="btn" data-a="nein">Kündigen</button><button type="button" class="btn ghostbtn" data-a="spaeter">Später</button></div></div>`}
+function bindCheck(){const el=main.querySelector('[data-chk]');if(!el)return;const c=db.contracts.find(x=>x.id===el.dataset.chk);if(!c)return;
+  el.querySelectorAll('[data-a]').forEach(b=>b.onclick=()=>{const a=b.dataset.a;delete c.checkSnooze;
+    if(a==='ja'){c.check=iso(T0);buzz(8);toast(`Alles klar. In 3 Monaten frag ich wieder nach ${c.anbieter}.`)}
+    else if(a==='spaeter'){c.checkSnooze=iso(addDays(T0,7));buzz(5);toast('Ich frag in einer Woche nochmal.')}
+    else{c.check=iso(T0);save();render();openLetter(c);return}
+    save();if(motion())el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateX(30px)'}],{duration:220,easing:'ease-in'}).onfinish=()=>render();else render()})}
+
+/* ---------- Jahresrückblick ---------- */
+function reviewYear(){const m=T0.getMonth();return m===0?T0.getFullYear()-1:T0.getFullYear()}
+function reviewSeason(){const m=T0.getMonth(),d=T0.getDate();return m===11||(m===0&&d<=15)}
+function reviewStats(Y){
+  const inY=s=>s&&String(s).slice(0,4)===String(Y);
+  const act=db.contracts.filter(c=>c.status!=='gekuendigt');
+  const mon=act.reduce((s,c)=>s+monthly(c),0);
+  const top=act.slice().sort((a,b)=>monthly(b)-monthly(a))[0]||null;
+  const gek=db.contracts.filter(c=>inY(c.gekuendigtAm));const spar=gek.reduce((s,c)=>s+monthly(c)*12,0);
+  const neu=db.devices.filter(d=>inY(d.kauf));const neuW=neu.reduce((s,d)=>s+Number(d.preis||0),0);
+  const neuTop=neu.slice().sort((a,b)=>Number(b.preis||0)-Number(a.preis||0))[0]||null;
+  const ab=db.devices.filter(d=>{const r=rateInfo(d);return r&&!r.aktiv&&inY(iso(r.last))});
+  const belege=[...db.devices,...db.contracts].reduce((s,x)=>s+(x.docs||[]).filter(d=>inY(d.added)).length,0);
+  const byKat={};act.forEach(c=>byKat[c.kategorie]=(byKat[c.kategorie]||0)+monthly(c));
+  const kat=Object.entries(byKat).sort((a,b)=>b[1]-a[1])[0]||null;
+  const wert=db.devices.reduce((s,d)=>s+Number(d.preis||0),0);
+  return {mon,top,gek,spar,neu,neuW,neuTop,ab,belege,kat,wert,nAct:act.length,nDev:db.devices.length}}
+function openReview(){
+  const Y=reviewYear(),st=reviewStats(Y),bisher=T0.getMonth()<11&&Y===T0.getFullYear();
+  const S=[];
+  S.push({k:'Belegbox',big:String(Y),sub:bisher?'Dein Jahr bis heute – tipp dich durch.':'Dein Jahr in Zahlen – tipp dich durch.',bg:'g1'});
+  S.push({k:'Deine Fixkosten',big:eur(st.mon*12),sub:`im Jahr für ${st.nAct} Verträge${st.mon?` – das sind ${dayTxt(st.mon*12/365)} an jedem einzelnen Tag.`:'.'}`,bg:'g2'});
+  if(st.top)S.push({k:'Dein teuerstes Abo',big:esc(st.top.anbieter),sub:`${eur(monthly(st.top))} im Monat · ${eur(monthly(st.top)*12)} im Jahr`,bg:'g3'});
+  if(st.kat)S.push({k:'Hier geht das meiste Geld hin',big:esc(st.kat[0]),sub:`${eur(st.kat[1])} im Monat`,bg:'g4'});
+  S.push(st.gek.length?{k:`${Y} gekündigt`,big:String(st.gek.length),sub:`${st.gek.map(c=>esc(c.anbieter)).slice(0,4).join(', ')}${st.gek.length>4?' …':''} – das spart ${eur(st.spar)} im Jahr.`,bg:'g5'}
+    :{k:`${Y} gekündigt`,big:'0',sub:'Kein einziges Abo gekündigt. Vielleicht hilft dir der Abo-Check im neuen Jahr?',bg:'g5'});
+  if(st.neu.length)S.push({k:'Neu dazugekommen',big:`${st.neu.length} Gerät${st.neu.length>1?'e':''}`,sub:`zusammen ${eur(st.neuW)}${st.neuTop&&st.neuTop.preis?` – am teuersten: ${esc(st.neuTop.name)}`:''}`,bg:'g6'});
+  if(st.ab.length)S.push({k:'Abbezahlt',big:String(st.ab.length),sub:`${st.ab.map(d=>esc(d.name)).join(', ')} – keine Raten mehr!`,bg:'g3'});
+  S.push({k:'Gut aufgehoben',big:String(st.belege),sub:`Beleg${st.belege===1?'':'e'} ${Y} gespeichert · ${st.nDev} Geräte im Wert von ${eur(st.wert)}`,bg:'g2'});
+  S.push({k:'Das war '+Y,big:Y===T0.getFullYear()&&T0.getMonth()<11?'Weiter so!':'Auf '+(Y+1)+'!',sub:'Danke, dass du deine Verträge im Blick behältst.',bg:'g1',end:true});
+  const ov=document.createElement('div');ov.className='story';ov.setAttribute('role','dialog');ov.setAttribute('aria-modal','true');
+  ov.innerHTML=`<div class="sbars">${S.map(()=>'<i><b></b></i>').join('')}</div><button type="button" class="x sx" aria-label="Schließen">✕</button><div class="sslide"></div>
+    <div class="snav"><button type="button" class="sprev" aria-label="Zurück"></button><button type="button" class="snext" aria-label="Weiter"></button></div>`;
+  document.body.appendChild(ov);document.body.style.overflow='hidden';
+  let n=0,timer=0;const bars=[...ov.querySelectorAll('.sbars i')],sl=ov.querySelector('.sslide');
+  const close=()=>{clearTimeout(timer);ov.remove();if(!root.firstElementChild)document.body.style.overflow=''};
+  const show=k=>{n=Math.max(0,Math.min(S.length-1,k));const s=S[n];clearTimeout(timer);
+    ov.className='story '+s.bg;bars.forEach((b,j)=>{b.className=j<n?'done':j===n?'now':''});
+    sl.innerHTML=`<div class="sk">${s.k}</div><div class="sbig">${s.big}</div><div class="ssub">${s.sub}</div>${s.end?'<button type="button" class="btn sdone">Schließen</button>':''}`;
+    if(motion())sl.animate([{opacity:0,transform:'translateY(18px) scale(.98)'},{opacity:1,transform:'none'}],{duration:420,easing:'cubic-bezier(.2,.85,.25,1)'});
+    const d=sl.querySelector('.sdone');if(d)d.onclick=close;
+    if(s.end){buzz([12,50,24]);return}
+    if(motion())timer=setTimeout(()=>show(n+1),5200)};
+  ov.querySelector('.sx').onclick=close;ov.querySelector('.snext').onclick=()=>{buzz(4);n===S.length-1?close():show(n+1)};ov.querySelector('.sprev').onclick=()=>{buzz(4);show(n-1)};
+  show(0);
+}
+
+/* ---------- Aus anderen Apps geteilte Dateien (Share Target) ---------- */
+const INBOX='inbox-belegbox';
+async function inboxFiles(){if(!('caches' in window))return [];
+  const c=await caches.open(INBOX),ks=await c.keys(),out=[];
+  for(const k of ks){const r=await c.match(k);if(!r)continue;const b=await r.blob();
+    out.push({key:k,file:new File([b],decodeURIComponent(r.headers.get('x-name')||'Datei'),{type:r.headers.get('content-type')||b.type})})}
+  return out}
+async function inboxClear(items){try{const c=await caches.open(INBOX);for(const it of items)await c.delete(it.key)}catch(e){}}
+async function attachFiles(it,files){
+  const docs=it.docs?it.docs.slice():[];let ok=0;
+  for(const f of files){const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name);if(!isPdf&&!/^image\//.test(f.type))continue;
+    try{const r=await prepDoc(f,isPdf);await filePut(r.meta.id,await sealFile(r.meta.id,r.buf));docs.push(r.meta);ok++}catch(e){}}
+  it.docs=docs;db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});await save();return ok}
+function openInbox(items){
+  const files=items.map(x=>x.file),names=files.map(f=>esc(f.name)).join(', ');
+  const all=[...db.devices.map(d=>({k:'d',it:d,t:d.name,s:[d.hersteller,d.raum].filter(Boolean).join(' · ')})),...db.contracts.map(c=>({k:'c',it:c,t:c.anbieter,s:c.kategorie}))];
+  openSheet(head(files.length>1?files.length+' Dateien empfangen':'Datei empfangen')+`
+    <p class="hint" style="margin:-6px 0 14px">${names}</p>
+    <div class="actions two"><button type="button" class="btn primary" id="i_d">Neues Gerät</button><button type="button" class="btn primary" id="i_c">Neuer Vertrag</button></div>
+    <div class="label" style="margin:18px 0 8px">Oder zu einem vorhandenen Eintrag</div>
+    <label class="field srchf"><span class="sr">Eintrag suchen</span><input id="i_q" type="search" placeholder="Eintrag suchen …" autocomplete="off"></label>
+    <div class="list" id="i_list" style="margin-top:10px"></div>
+    <div class="actions" style="margin-top:16px"><button type="button" class="btn danger" id="i_x">Verwerfen</button></div>`,
+  s=>{const L=s.querySelector('#i_list'),q=s.querySelector('#i_q');
+    const draw=()=>{const t=q.value.toLowerCase().trim();const hit=all.filter(x=>!t||(x.t+' '+x.s).toLowerCase().includes(t)).slice(0,25);
+      L.innerHTML=hit.length?hit.map(x=>`<button type="button" class="row" data-ik="${x.k}" data-ii="${x.it.id}">${x.k==='d'?tileFor(x.it):conTile(x.it)}<div class="main"><div class="t">${esc(x.t)}</div><div class="s">${esc(x.s||'')}</div></div><span class="pill p-none">${x.k==='d'?'Gerät':'Vertrag'}</span></button>`).join(''):'<div class="empty">Nichts gefunden.</div>';
+      L.querySelectorAll('[data-ii]').forEach(b=>b.onclick=async()=>{const it=(b.dataset.ik==='d'?db.devices:db.contracts).find(x=>x.id===b.dataset.ii);if(!it)return;
+        b.disabled=true;b.querySelector('.pill').textContent='Wird verschlüsselt …';
+        const n=await attachFiles(it,files);await inboxClear(items);render();openDetail(b.dataset.ik,it.id);
+        if(n){celebrate('Gespeichert');toast(`${n===1?'Datei':n+' Dateien'} bei ${b.dataset.ik==='d'?it.name:it.anbieter} gespeichert.`)}else toast('Die Datei konnte nicht gelesen werden. Erlaubt sind PDF und Bilder.')})};
+    q.addEventListener('input',draw);draw();
+    const newWith=k=>{openForm(k);const inp=root.querySelector('#docIn');
+      if(inp&&window.DataTransfer){const dt=new DataTransfer();files.forEach(f=>dt.items.add(f));inp.files=dt.files;inp.dispatchEvent(new Event('change'))}
+      inboxClear(items)};
+    s.querySelector('#i_d').onclick=()=>newWith('d');s.querySelector('#i_c').onclick=()=>newWith('c');
+    s.querySelector('#i_x').onclick=async()=>{await inboxClear(items);closeSheet();toast('Verworfen.')};
+  });
+}
+
+/* ---------- Schnellaktionen am App-Icon und Start nach dem Entsperren ---------- */
+const QS=new URLSearchParams(location.search);
+let pendingAct=QS.get('aktion');
+if(location.search){try{history.replaceState(null,'',location.pathname)}catch(e){}}
+function afterUnlock(){
+  setTimeout(async()=>{if(!db)return;
+    let items=[];try{items=await inboxFiles()}catch(e){}
+    if(items.length){pendingAct=null;openInbox(items);return}
+    const a=pendingAct;pendingAct=null;
+    if(a==='foto')openForm('d',null,true);else if(a==='geraet')openForm('d');else if(a==='vertrag')openForm('c');else if(a==='suche')openSearch();
+    remindPing(false);
+  },motion()?950:60);
 }
 
 /* ---------- Tabs: Antippen oder Wischen ---------- */
@@ -1324,6 +1677,7 @@ function tstep(){traf=0;
 }
 
 document.getElementById('menuBtn').onclick=()=>{setFan(false);openMenu()};
+document.getElementById('searchBtn').onclick=()=>{if(!db)return;setFan(false);openSearch()};
 document.getElementById('lockBtn').onclick=()=>lock(true);
 boot();
 

@@ -1,6 +1,20 @@
-# Belegbox – Test-App 0.6.7.4
+# Belegbox – Test-App 0.7.0.5
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.7
+
+- **Teilen aus anderen Apps**: PDF oder Bild in Gmail, Amazon usw. → Teilen → Belegbox. Nach dem Entsperren wählst du, zu welchem Gerät oder Vertrag die Datei gehört, oder legst einen neuen Eintrag an. Bis dahin liegt die Datei kurz unverschlüsselt im Eingangsfach der App.
+- **Erinnerungen** (Daten → Erinnerungen): Benachrichtigung, wenn in den nächsten 14 Tagen eine Frist abläuft, auf Android mit Punkt am App-Icon. Android prüft auch bei geschlossener App, meist etwa einmal am Tag. Dafür liegen nur die Termine ohne Namen und Beträge unverschlüsselt auf dem Handy. Eine Zahl am Icon gibt es für Web-Apps auf Android nicht.
+- **Weiterlaufen lassen**: Im Vertrag „Weiterlaufen lassen“ – für die aktuelle Laufzeit keine Erinnerung, ab der nächsten wieder.
+- **Schnellaktionen**: Lange auf das App-Icon drücken → Beleg fotografieren, Neues Gerät, Neues Abo, Suchen.
+- **Kündigung schreiben**: fertiger Text mit Kunden- und Vertragsnummer zum Kopieren oder Teilen. Der Absender wird verschlüsselt gespeichert.
+- **Mangel melden**: Reklamationstext mit allen Gerätedaten, auf Wunsch zusammen mit den Belegen teilen.
+- **Seriennummer scannen**: Barcode oder QR-Code am Typenschild mit der Kamera lesen.
+- **Suche** (Lupe oben): über Namen, Seriennummern, Notizen, Kundennummern und Dateinamen.
+- **Kosten pro Tag** in Übersicht, Vertragsliste und Details.
+- **Abo-Check**: Alle 3 Monate fragt die App bei Streaming, Software, Fitness und Sonstigem nach, ob du es noch nutzt.
+- **Jahresrückblick**: Daten → Jahresrückblick, vom 1. Dezember bis 15. Januar auch als Hinweis in der Übersicht.
 
 ## Gesten & Bewegung (ab 0.4)
 
