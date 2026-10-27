@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.7.0.5';
+const APP_VERSION='0.7.1.6';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -1519,7 +1519,14 @@ async function attachFiles(it,files){
   for(const f of files){const isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name);if(!isPdf&&!/^image\//.test(f.type))continue;
     try{const r=await prepDoc(f,isPdf);await filePut(r.meta.id,await sealFile(r.meta.id,r.buf));docs.push(r.meta);ok++}catch(e){}}
   it.docs=docs;db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});await save();return ok}
-function openInbox(items){
+const SHARE_T='application/x-belegbox-share';
+async function openInbox(items){
+  const fileItems=items.filter(x=>x.file.type!==SHARE_T),notes=items.filter(x=>x.file.type===SHARE_T);
+  if(!fileItems.length){ // keine Datei angekommen: zeigen, was stattdessen kam
+    let info={};try{info=JSON.parse(await notes[notes.length-1].file.text())}catch(e){}
+    return openShareText(items,info)}
+  if(notes.length)inboxClear(notes);
+  items=fileItems;
   const files=items.map(x=>x.file),names=files.map(f=>esc(f.name)).join(', ');
   const all=[...db.devices.map(d=>({k:'d',it:d,t:d.name,s:[d.hersteller,d.raum].filter(Boolean).join(' · ')})),...db.contracts.map(c=>({k:'c',it:c,t:c.anbieter,s:c.kategorie}))];
   openSheet(head(files.length>1?files.length+' Dateien empfangen':'Datei empfangen')+`
@@ -1545,14 +1552,42 @@ function openInbox(items){
   });
 }
 
+/* Geteilt wurde nur ein Link oder Text – oder es ging etwas schief */
+function openShareText(items,info){
+  const txt=String(info.text||'').trim();
+  const all=[...db.devices.map(d=>({k:'d',it:d,t:d.name,s:[d.hersteller,d.raum].filter(Boolean).join(' · ')})),...db.contracts.map(c=>({k:'c',it:c,t:c.anbieter,s:c.kategorie}))];
+  const why=info.error?`Beim Empfangen ist ein Fehler aufgetreten (${esc(info.error)}). Versuch es bitte noch einmal.`
+    :info.big?'Die Datei ist größer als 25 MB und wurde nicht übernommen.'
+    :'Es kam keine Datei an, sondern nur ein Link oder Text. In <b>Adobe Acrobat</b> unter „Teilen“ die Option <b>„Kopie senden“</b> bzw. <b>„Datei teilen“</b> wählen – nicht „Link teilen“. In Gmail den PDF-Anhang öffnen und von dort teilen.';
+  openSheet(head(txt?'Link oder Text empfangen':'Nichts empfangen')+`
+    <div class="note" style="margin:-4px 0 14px">${why}</div>
+    ${txt?`<div class="letter">${esc(txt)}</div>
+      <div class="label" style="margin:16px 0 8px">Als Notiz zu einem Eintrag speichern</div>
+      <label class="field srchf"><span class="sr">Eintrag suchen</span><input id="t_q" type="search" placeholder="Eintrag suchen …" autocomplete="off"></label>
+      <div class="list" id="t_list" style="margin-top:10px"></div>`:''}
+    <div class="actions" style="margin-top:16px"><button type="button" class="btn" id="t_x">${txt?'Verwerfen':'Schließen'}</button></div>`,
+  s=>{s.querySelector('#t_x').onclick=async()=>{await inboxClear(items);closeSheet()};
+    if(!txt){inboxClear(items);return}
+    const L=s.querySelector('#t_list'),q=s.querySelector('#t_q');
+    const draw=()=>{const t=q.value.toLowerCase().trim();const hit=all.filter(x=>!t||(x.t+' '+x.s).toLowerCase().includes(t)).slice(0,25);
+      L.innerHTML=hit.length?hit.map(x=>`<button type="button" class="row" data-ik="${x.k}" data-ii="${x.it.id}">${x.k==='d'?tileFor(x.it):conTile(x.it)}<div class="main"><div class="t">${esc(x.t)}</div><div class="s">${esc(x.s||'')}</div></div><span class="pill p-none">${x.k==='d'?'Gerät':'Vertrag'}</span></button>`).join(''):'<div class="empty">Nichts gefunden.</div>';
+      L.querySelectorAll('[data-ii]').forEach(b=>b.onclick=async()=>{const it=(b.dataset.ik==='d'?db.devices:db.contracts).find(x=>x.id===b.dataset.ii);if(!it)return;
+        if(textBanky(txt)){toast('Der Text enthält eine IBAN oder Kartennummer und wird deshalb nicht gespeichert.');return}
+        it.notiz=(it.notiz?it.notiz.replace(/\s+$/,'')+'\n\n':'')+fmtD(T0)+': '+txt;
+        db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});await save();await inboxClear(items);render();openDetail(b.dataset.ik,it.id);
+        buzz(10);toast('Als Notiz gespeichert.')})};
+    q.addEventListener('input',draw);draw()});
+}
+
 /* ---------- Schnellaktionen am App-Icon und Start nach dem Entsperren ---------- */
 const QS=new URLSearchParams(location.search);
-let pendingAct=QS.get('aktion');
+let pendingAct=QS.get('aktion'),pendingShare=QS.has('geteilt');
 if(location.search){try{history.replaceState(null,'',location.pathname)}catch(e){}}
 function afterUnlock(){
   setTimeout(async()=>{if(!db)return;
     let items=[];try{items=await inboxFiles()}catch(e){}
-    if(items.length){pendingAct=null;openInbox(items);return}
+    if(items.length){pendingAct=null;pendingShare=false;openInbox(items);return}
+    if(pendingShare){pendingShare=false;openShareText([],{})}
     const a=pendingAct;pendingAct=null;
     if(a==='foto')openForm('d',null,true);else if(a==='geraet')openForm('d');else if(a==='vertrag')openForm('c');else if(a==='suche')openSearch();
     remindPing(false);

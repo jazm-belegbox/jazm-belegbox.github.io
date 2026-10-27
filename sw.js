@@ -1,7 +1,7 @@
 // Belegbox Service Worker – nur App-Dateien werden gecacht, nie Nutzerdaten.
 // Ausnahmen: aus anderen Apps geteilte Dateien liegen kurz im Eingangsfach (bis die App entsperrt ist und sie
 // verschlüsselt), und bei eingeschalteten Erinnerungen eine Liste von Terminen ohne Namen oder Beträge.
-const CACHE = 'belegbox-0.7.0.5';
+const CACHE = 'belegbox-0.7.1.6';
 const INBOX = 'inbox-belegbox', SCHED = 'sched-belegbox';
 const FILES = ['./', 'index.html', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/icon-180.png', 'icons/badge-96.png',
@@ -30,15 +30,23 @@ self.addEventListener('fetch', e => {
   // Teilen aus anderen Apps: Dateien ins Eingangsfach, dann die App öffnen
   if (req.method === 'POST' && url.searchParams.has('teilen')) {
     e.respondWith((async () => {
+      const c = await caches.open(INBOX), put = (body, type, name) =>
+        c.put(new Request('./__inbox/' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)),
+          new Response(body, { headers: { 'content-type': type, 'x-name': encodeURIComponent(name) } }));
       try {
-        const fd = await req.formData(), c = await caches.open(INBOX);
-        let i = 0;
+        const fd = await req.formData();
+        let n = 0, big = 0;
         for (const f of fd.getAll('files')) {
-          if (!f || !f.size || f.size > 25e6) continue;
-          await c.put(new Request('./__inbox/' + Date.now() + '-' + (i++)),
-            new Response(f, { headers: { 'content-type': f.type || 'application/octet-stream', 'x-name': encodeURIComponent(f.name || 'Datei') } }));
+          if (!f || typeof f === 'string' || !f.size) continue;
+          if (f.size > 25e6) { big++; continue; }
+          await put(f, f.type || 'application/octet-stream', f.name || 'Datei'); n++;
         }
-      } catch (x) {}
+        // Kein Anhang, nur Link oder Text (z. B. „Link teilen“ in Adobe Acrobat oder eine ganze E-Mail)
+        const txt = ['title', 'text', 'url'].map(k => fd.get(k)).filter(v => typeof v === 'string' && v.trim()).join('\n');
+        if (!n) await put(JSON.stringify({ text: txt, big, keys: [...new Set([...fd.keys()])] }), 'application/x-belegbox-share', 'Geteilter Inhalt');
+      } catch (x) {
+        try { await put(JSON.stringify({ error: String(x && x.message || x) }), 'application/x-belegbox-share', 'Fehler'); } catch (y) {}
+      }
       return Response.redirect('./?geteilt=1', 303);
     })());
     return;
