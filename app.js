@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.5.1.0';
+const APP_VERSION='0.5.2.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -149,6 +149,13 @@ async function unlockBio(){
 function looksBanky(s){const x=String(s||'').replace(/[\s-]/g,'').toUpperCase();
   if(/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(x))return true;
   if(/^[3-6]\d{14,15}$/.test(x)){let sum=0,alt=false;for(let i=x.length-1;i>=0;i--){let n=+x[i];if(alt){n*=2;if(n>9)n-=9}sum+=n;alt=!alt}return sum%10===0}
+  return false}
+/* Freitext (Notizen): IBANs (mit Prüfsumme) und Kartennummern (mit Luhn) auch mitten im Text erkennen */
+function ibanOk(x){x=x.replace(/\s/g,'').toUpperCase();if(!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(x))return false;
+  const r=(x.slice(4)+x.slice(0,4)).replace(/[A-Z]/g,c=>String(c.charCodeAt(0)-55));let m=0;for(const ch of r)m=(m*10+ +ch)%97;return m===1}
+function textBanky(t){t=String(t||'');
+  for(const m of t.match(/[A-Za-z]{2}\d{2}(?:[ ]?[A-Za-z0-9]){11,30}/g)||[])if(ibanOk(m))return true;
+  for(const m of t.match(/(?:\d[ -]?){15,16}/g)||[])if(looksBanky(m))return true;
   return false}
 const maskVal=s=>{s=String(s||'');return s.length<=4?s:'•••• '+s.slice(-4)};
 
@@ -501,6 +508,8 @@ function upcoming(){
 
 /* Render */
 const main=document.getElementById('main');
+const NOTEICON='<svg class="ni" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-label="hat Notiz"><path d="M5 4h14v11l-5 5H5z"/><path d="M14 20v-5h5M8 9h8M8 13h4"/></svg>';
+const noteBlock=it=>it.notiz?`<div class="label" style="margin-bottom:8px">Notizen & Hinweise</div><div class="notetext">${esc(it.notiz)}</div>`:'';
 function conTile(c){return c.logo?`<div class="tile logo"><img src="${c.logo}" alt=""></div>`:`<div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>`}
 function tileFor(d){const th=!d.foto&&(d.docs||[]).find(x=>x.thumb);if(th)return `<div class="tile"><img src="${th.thumb}" alt="" style="object-position:top"></div>`;
   return d.foto?`<div class="tile"><img src="${d.foto}" alt=""></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
@@ -573,7 +582,7 @@ function ring(f,size,w){const r=(size-w)/2,c=+(2*Math.PI*r).toFixed(2),h=size/2;
     `<circle class="arc" cx="${h}" cy="${h}" r="${r}" stroke-width="${w}" stroke-dasharray="${c}" stroke-dashoffset="${(c*(1-f)).toFixed(2)}" transform="rotate(-90 ${h} ${h})" style="stroke:${ringColor(f)}"/>`}</svg>`}
 function tileWrap(d){const p=prot(d);return `<div class="tw">${ring(p?p.f:null,46,3.5)}${tileFor(d)}</div>`}
 function devRow(d){const i=deviceInfo(d);return `<button type="button" class="row" data-kind="d" data-open="${d.id}">
-  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}${d.hersteller||d.raum?' · ':''}gekauft ${d.geschaetzt?'ca. ':''}${i.kauf.getFullYear()}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest}</span>`:'')(rateInfo(d))}</div></div>
+  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}${d.notiz?NOTEICON:''}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}${d.hersteller||d.raum?' · ':''}gekauft ${d.geschaetzt?'ca. ':''}${i.kauf.getFullYear()}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest}</span>`:'')(rateInfo(d))}</div></div>
   <span class="amt num">${d.preis?eur(d.preis):'–'}</span></button>`}
 function viewDevices(){
   const F={alle:['Alle',()=>true],schutz:['Schutz aktiv',d=>!!deviceInfo(d).best],bald:['Läuft bald ab',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60}],ohne:['Ohne Nachweis',d=>d.nachweis==='keiner'],raten:['Ratenkauf',d=>!!rateInfo(d)]};
@@ -592,7 +601,7 @@ function viewContracts(){
     <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
     <div class="list">${list.length?list.map(c=>`<button type="button" class="row" data-kind="c" data-open="${c.id}">
       ${conTile(c)}
-      <div class="main"><div class="t">${esc(c.anbieter)}</div><div class="s">${esc(c.kategorie)} · ${eur(price(c))} ${INTERVALL[c.intervall]||''}</div><div class="pl">${conPill(c)}</div></div>
+      <div class="main"><div class="t">${esc(c.anbieter)}${c.notiz?NOTEICON:''}</div><div class="s">${esc(c.kategorie)} · ${eur(price(c))} ${INTERVALL[c.intervall]||''}</div><div class="pl">${conPill(c)}</div></div>
       <span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')
       :`<div class="empty">Noch keine Verträge. Tippe auf „Neu“ und trage Kosten, Laufzeit und Kündigungsfrist ein.</div>`}</div>
   </section>`;
@@ -690,6 +699,7 @@ function openDetail(kind,id,from){
             ${d.rate.bank?`<dt>Finanziert über</dt><dd>${esc(d.rate.bank)}</dd>`:''}
             ${d.rate.vnr?`<dt>Finanzierungs-Nr.</dt><dd class="num"><span data-rmask>${esc(maskVal(d.rate.vnr))}</span><button type="button" class="reveal" data-rshow>Anzeigen</button></dd>`:''}
           </dl></div>`)(rateInfo(d))}
+      ${noteBlock(d)}
       ${docSection(d)}
       <div class="actions"><button type="button" class="btn primary" id="edit">Bearbeiten</button><button type="button" class="btn danger" id="del">Löschen</button></div>`,
       s=>{const pr=s.querySelector('.prot');if(pr&&motion())pr.classList.add('enter');bindDocs(s,d);
@@ -710,6 +720,7 @@ function openDetail(kind,id,from){
         ${i.by?`<dt>Spätestens kündigen</dt><dd><b>${fmtD(i.by)}</b> (${inDays(days(i.by))})</dd>`:''}
         ${[['kundennr','Kundennummer'],['vertragsnr','Vertragsnummer']].map(([f,l])=>`<dt>${l}</dt><dd class="num">${c[f]?`<span data-mask="${f}">${esc(maskVal(c[f]))}</span><button type="button" class="reveal" data-show="${f}">Anzeigen</button><button type="button" class="reveal" data-copy="${f}">Kopieren</button>`:'–'}</dd>`).join('')}
       </dl>
+      ${noteBlock(c)}
       ${docSection(c)}
       <div class="actions">
         <button type="button" class="btn primary" id="edit">Bearbeiten</button>
@@ -773,6 +784,7 @@ function openForm(kind,item,camera,tpl){
     <label class="field"><span>Kaufnachweis</span><select id="f_nach">${Object.entries(NACHWEIS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
     <label class="field"><span>${item&&item.foto?'Foto ersetzen':'Foto von Beleg oder Typenschild'}</span><input id="f_foto" type="file" accept="image/*"></label>
     ${item&&item.foto?'<label class="check"><input id="f_fotoDel" type="checkbox"> Vorhandenes Foto entfernen</label>':''}
+    <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
     ${DOCFIELD}
     <p class="hint">Bei Kontoauszügen vorher alles außer der Buchung schwärzen. Die gesetzliche Gewährleistung von 2 Jahren ab Kauf wird automatisch berechnet.</p>`;
   const con=`
@@ -797,6 +809,7 @@ function openForm(kind,item,camera,tpl){
     <div class="prev" id="c_prev" aria-live="polite"></div>
     <div class="note" id="c_law" hidden>Verträge, die ab dem 1. März 2022 geschlossen wurden, verlängern sich nach der Mindestlaufzeit meist nur noch auf unbestimmte Zeit und sind dann monatlich kündbar (1 Monat Frist). Prüf kurz deine Unterlagen.
       <button type="button" class="linkbtn" id="c_lawGo" style="display:block;padding-top:6px;color:var(--warn)">Als „unbefristet, 1 Monat Frist“ übernehmen</button></div>
+    <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
     ${DOCFIELD}`;
   openSheet(head(item?'Bearbeiten':tpl?'Vertrag kopieren':'Neuer Eintrag')+`<form id="frm" novalidate>
     ${tpl?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
@@ -814,18 +827,18 @@ function openForm(kind,item,camera,tpl){
         if(el.tagName==='SELECT'&&![...el.options].some(o=>o.value===String(val))){const o=document.createElement('option');o.value=String(val);o.textContent=String(val);el.appendChild(o)}
         el.value=String(val)};
       if(kind==='d'){set('f_name',src.name);set('f_kat',src.kategorie);set('f_raum',src.raum);set('f_her',src.hersteller);set('f_mod',src.modell);
-        set('f_sn',src.sn);set('f_kauf',src.kauf);set('f_preis',src.preis||'');set('f_hae',src.haendler);set('f_gar',src.garantieMonate||0);set('f_nach',src.nachweis);
+        set('f_sn',src.sn);set('f_kauf',src.kauf);set('f_preis',src.preis||'');set('f_hae',src.haendler);set('f_gar',src.garantieMonate||0);set('f_nach',src.nachweis);set('x_note',src.notiz||'');
         s.querySelector('#f_ges').checked=!!src.geschaetzt;
         if(src.rate){s.querySelector('#f_rk').checked=true;set('f_rb',src.rate.betrag);set('f_rn',src.rate.anzahl);set('f_rs',src.rate.start);
           set('f_ra',src.rate.anzahlung||'');set('f_rf',src.rate.bank||'');if(item)set('f_rv',src.rate.vnr||'')}}
       else{set('c_anb',src.anbieter);set('c_kat',src.kategorie);set('c_kd',src.kundennr);set('c_kost',src.kosten);set('c_kn',src.kostenNach==null?'':src.kostenNach);set('c_int',src.intervall);
-        set('c_lz',src.laufzeit);set('c_verl',src.verl);set('c_fr',src.frist);set('c_mod',src.modus||'beginn');set('c_end',src.ende||'');
+        set('c_lz',src.laufzeit);set('c_verl',src.verl);set('x_note',src.notiz||'');set('c_fr',src.frist);set('c_mod',src.modus||'beginn');set('c_end',src.ende||'');
         if(item){if(item.beginn)set('c_beg',item.beginn);set('c_vnr',item.vertragsnr||'')}}
     }
     s.querySelector('#frm').addEventListener('submit',async e=>{e.preventDefault();const err=s.querySelector('#err');let first=false;
       const commitDocs=async()=>{if(D.busy()){err.textContent='Eine Datei wird noch gelesen. Einen Moment …';err.hidden=false;return false}
         try{await D.commit();return true}catch(x){err.textContent='Die Datei konnte nicht gespeichert werden. Vermutlich ist der Speicher voll.';err.hidden=false;return false}};
-      if([...s.querySelectorAll('input:not([type])')].some(i=>looksBanky(i.value))){
+      if([...s.querySelectorAll('input:not([type])')].some(i=>looksBanky(i.value))||textBanky(s.querySelector('#x_note').value)){
         err.textContent='Ein Feld sieht nach einer IBAN oder Kartennummer aus. Solche Nummern speichert die Belegbox bewusst nicht. Trag höchstens die letzten vier Ziffern ein.';err.hidden=false;return}
       if(kind==='d'){
         if(!v('f_name')||!v('f_kauf')){err.textContent='Bitte Bezeichnung und Kaufdatum ausfüllen.';err.hidden=false;return}
@@ -839,7 +852,7 @@ function openForm(kind,item,camera,tpl){
         if(!await commitDocs())return;
         const dd={name:v('f_name'),kategorie:v('f_kat'),raum:v('f_raum'),hersteller:v('f_her'),modell:v('f_mod'),sn:v('f_sn'),
           kauf:v('f_kauf'),geschaetzt:s.querySelector('#f_ges').checked,preis:parseFloat(v('f_preis'))||0,haendler:v('f_hae'),
-          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,rate};
+          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,rate,notiz:v('x_note')};
         if(item){Object.assign(item,dd);delete item.ex}else{first=!db.devices.some(x=>!x.ex);db.devices.push(Object.assign({id:uid()},dd))}
         tab='geraete';
       } else {
@@ -852,7 +865,7 @@ function openForm(kind,item,camera,tpl){
         if(logo===undefined){ // gleicher Anbieter hat schon ein Logo? Dann übernehmen
           const twin=db.contracts.find(x=>x!==item&&x.logo&&x.anbieter.trim().toLowerCase()===v('c_anb').toLowerCase());logo=twin?twin.logo:''}
         const cc={logo,anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')===''?null:(parseFloat(v('c_kn'))||0),
-          intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),docs:D.docs};
+          intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),docs:D.docs,notiz:v('x_note')};
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
       }
