@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.2.0';
+const APP_VERSION='0.6.3.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -930,7 +930,9 @@ function openForm(kind,item,camera,tpl){
     <div class="grid2"><label class="field"><span>Händler</span><input id="f_hae"></label>
       <label class="field"><span>Herstellergarantie</span><select id="f_gar"><option value="0">keine</option><option value="12">1 Jahr</option><option value="24">2 Jahre</option><option value="36">3 Jahre</option><option value="60">5 Jahre</option></select></label></div>
     <label class="field"><span>Kaufnachweis</span><select id="f_nach">${Object.entries(NACHWEIS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
-    <label class="field"><span>${item&&item.foto?'Foto ersetzen':'Foto von Beleg oder Typenschild'}</span><input id="f_foto" type="file" accept="image/*"></label>
+    <label class="field"><span>${item&&item.foto?'Foto ersetzen':'Foto (Gerät, Beleg oder Typenschild)'}</span><input id="f_foto" type="file" accept="image/*"></label>
+    <div class="ask" id="f_ask" hidden><span>Ist das ein Kaufbeleg (Kassenbon oder Rechnung)?</span>
+      <div class="actions"><button type="button" class="btn" id="f_askYes">Ja, als Kaufnachweis</button><button type="button" class="btn" id="f_askNo">Nein</button></div></div>
     ${item&&item.foto?'<label class="check"><input id="f_fotoDel" type="checkbox"> Vorhandenes Foto entfernen</label>':''}
     <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
     ${DOCFIELD}
@@ -1021,6 +1023,14 @@ function openForm(kind,item,camera,tpl){
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
+    if(kind==='d'){ // Neues Foto: nur auf Nachfrage als Kaufnachweis werten, nie automatisch
+      const fi=s.querySelector('#f_foto'),ask=s.querySelector('#f_ask'),na=s.querySelector('#f_nach');
+      if(!src)na.value='keiner'; // neues Gerät: erst mit Beleg gilt es als nachgewiesen
+      fi.addEventListener('change',()=>{ask.hidden=!(fi.files[0]&&na.value==='keiner')});
+      s.querySelector('#docIn').addEventListener('change',()=>{if(na.value==='keiner')ask.hidden=false});
+      s.querySelector('#f_askYes').onclick=()=>{na.value='beleg';ask.hidden=true;buzz(6);toast('Kaufnachweis auf „Kassenbon / Rechnung“ gesetzt.')};
+      s.querySelector('#f_askNo').onclick=()=>{ask.hidden=true;buzz(5)};
+    }
     if(kind==='d'){ // Ratenkauf ein-/ausklappen und live durchrechnen
       const rk=s.querySelector('#f_rk'),box=s.querySelector('#f_rbox'),pv=s.querySelector('#f_rprev');
       const upd=()=>{box.hidden=!rk.checked;if(!rk.checked)return;
@@ -1062,7 +1072,7 @@ function openForm(kind,item,camera,tpl){
       upd();
     }
     if(camera&&kind==='d'){ // „Beleg fotografieren“: Kamera direkt öffnen
-      const fi=s.querySelector('#f_foto');fi.setAttribute('capture','environment');s.querySelector('#f_nach').value='beleg';fi.click();
+      const fi=s.querySelector('#f_foto');fi.setAttribute('capture','environment');fi.click();
     }else{const first=s.querySelector('input');if(first)first.focus({preventScroll:true})}
   });
 }
