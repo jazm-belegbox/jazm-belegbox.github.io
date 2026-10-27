@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.5.2.0';
+const APP_VERSION='0.5.3.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -68,7 +68,30 @@ function readVault(){try{const r=localStorage.getItem(VKEY);return r?JSON.parse(
 async function persist(){
   if(!key||!db||!vmeta)return;
   const box=await seal(key,te.encode(JSON.stringify(db)));
-  localStorage.setItem(VKEY,JSON.stringify(Object.assign({},vmeta,{v:2,iv:box.iv,ct:box.ct})));
+  const json=JSON.stringify(Object.assign({},vmeta,{v:2,iv:box.iv,ct:box.ct,saved:Date.now()}));
+  // Zweitkopie zuerst (IndexedDB), dann Hauptspeicher – fällt einer weg, stellt boot() aus dem anderen wieder her
+  try{await filePut(MIRROR,json)}catch(e){}
+  localStorage.setItem(VKEY,json);
+}
+/* Zweitkopie des verschlüsselten Tresors + Start-Prüfung */
+const MIRROR='__vault__';
+let bootInfo={orphans:0,broken:false};
+const vaultOk=j=>{try{const v=JSON.parse(j);return !!(v&&typeof v.salt==='string'&&typeof v.ct==='string')}catch(e){return false}};
+const vaultTime=j=>{try{return Number(JSON.parse(j).saved)||0}catch(e){return 0}};
+async function boot(){
+  try{
+    let raw=null;try{raw=localStorage.getItem(VKEY)}catch(e){}
+    const m=await fileGet(MIRROR).catch(()=>null);
+    const ok=!!raw&&vaultOk(raw),mOk=typeof m==='string'&&vaultOk(m);
+    if(mOk&&(!ok||vaultTime(m)>vaultTime(raw))){
+      if(raw&&!ok){try{localStorage.setItem(VKEY+'-defekt-'+Date.now(),raw)}catch(e){}}
+      localStorage.setItem(VKEY,m);
+      if(!ok)setTimeout(()=>toast('Der Tresor fehlte im Hauptspeicher und wurde aus der Zweitkopie wiederhergestellt.'),800);
+    }else if(ok&&m!==raw){filePut(MIRROR,raw).catch(()=>{})}
+    if(!ok&&!mOk){bootInfo.broken=!!raw;
+      bootInfo.orphans=(await fileKeys().catch(()=>[])).filter(k=>!String(k).startsWith('__')).length}
+  }catch(e){}
+  showLock();
 }
 let saving=Promise.resolve();
 function save(){saving=saving.then(persist).catch(()=>toast('Speichern fehlgeschlagen. Der Speicher ist vermutlich voll: Entferne ein paar Fotos.'));return saving}
@@ -211,6 +234,10 @@ function showLock(closing){
       <label class="field"><span>Passwort (mind. 10 Zeichen)</span><input id="lp1" type="password" autocomplete="new-password" minlength="10"></label>
       <label class="field"><span>Passwort wiederholen</span><input id="lp2" type="password" autocomplete="new-password"></label>
       <label class="check"><input id="lex" type="checkbox" checked> Mit Beispieleinträgen starten</label>
+      ${bootInfo.broken?`<div class="note" style="background:var(--crit-soft)"><b>Achtung:</b> Auf diesem Gerät liegt ein Tresor, der sich nicht lesen lässt. Speichere ihn zuerst, bevor du neu anfängst.
+        <button type="button" class="linkbtn" id="lraw" style="display:block;color:var(--crit)">Beschädigten Tresor als Datei speichern</button></div>`:''}
+      ${bootInfo.orphans?`<div class="note" style="background:var(--crit-soft)"><b>Achtung:</b> Auf diesem Gerät liegen noch ${bootInfo.orphans>1?bootInfo.orphans+' verschlüsselte Dokumente':'ein verschlüsseltes Dokument'}, aber kein Tresor. Hast du eine Sicherung, stell sie unten wieder her, statt neu anzufangen.</div>`:''}
+      ${bootInfo.broken||bootInfo.orphans?'<label class="check"><input id="lnew" type="checkbox"> Ich möchte trotzdem einen neuen, leeren Tresor anlegen</label>':''}
       <div class="note">Es gibt keine Wiederherstellung. Wer das Passwort vergisst, verliert die Daten. Notier es dir an einem sicheren Ort, z. B. im Passwortmanager.</div>`
     :`<h2>Belegbox ist gesperrt</h2><p>${bio?'Entsperre mit deinem Fingerabdruck oder deinem Passwort.':'Gib dein Passwort ein, um deine Daten zu entschlüsseln.'}</p>
       ${bio?`<button type="button" class="btn primary bio" id="lbio">${FINGER}Mit Fingerabdruck entsperren</button><div class="or"><span>oder mit Passwort</span></div>`:''}
@@ -232,7 +259,8 @@ function showLock(closing){
   f.addEventListener('submit',async e=>{e.preventDefault();err.hidden=true;
     const p1=L.querySelector('#lp1').value;
     if(!window.crypto||!crypto.subtle)return fail('Dieser Browser unterstützt keine Verschlüsselung. Öffne die Seite in einem aktuellen Browser.');
-    if(setup){const p2=L.querySelector('#lp2').value;
+    if(setup){const p2=L.querySelector('#lp2').value,ln=L.querySelector('#lnew');
+      if(ln&&!ln.checked)return fail('Bitte zuerst eine Sicherung wiederherstellen – oder bestätigen, dass du neu anfangen möchtest.');
       if(p1.length<10)return fail('Das Passwort braucht mindestens 10 Zeichen.');
       if(p1!==p2)return fail('Die beiden Passwörter stimmen nicht überein.');}
     go.disabled=true;go.textContent=setup?'Wird verschlüsselt …':'Wird entschlüsselt …';V.classList.add('busy');
@@ -260,6 +288,7 @@ function showLock(closing){
       if(x&&x.name==='NotAllowedError'){err.textContent='Abgebrochen. Tippe erneut oder nutze dein Passwort.'}
       else{err.textContent='Entsperren per Fingerabdruck hat nicht geklappt. Bitte nutze dein Passwort.';shake()}
       err.hidden=false}};
+  const lr=L.querySelector('#lraw');if(lr)lr.onclick=()=>{let r='';try{r=localStorage.getItem(VKEY)||''}catch(e){}deliverFile('belegbox-tresor-beschaedigt.txt',r,'text/plain')};
   const rf=L.querySelector('#lrestore');
   if(rf)rf.addEventListener('change',async()=>{const file=rf.files[0];if(!file)return;
     try{restoreVault(await readBackupFile(file))}catch(x){fail(x.message)}});
@@ -296,7 +325,7 @@ async function sealFile(id,buf){const iv=rnd(12);return {iv,ct:await crypto.subt
 async function openDoc(id){const r=await fileGet(id);if(!r)throw new Error('missing');
   return crypto.subtle.decrypt({name:'AES-GCM',iv:r.iv,additionalData:te.encode(id)},key,r.ct)}
 const allDocIds=()=>db?[...db.devices,...db.contracts].flatMap(x=>(x.docs||[]).map(d=>d.id)):[];
-async function cleanFiles(){if(!db)return;try{const keep=new Set(allDocIds());for(const k of await fileKeys())if(!keep.has(k))await fileDel(k)}catch(e){}}
+async function cleanFiles(){if(!db)return;try{const keep=new Set(allDocIds());for(const k of await fileKeys())if(!String(k).startsWith('__')&&!keep.has(k))await fileDel(k)}catch(e){}}
 const fmtSize=n=>n>=1e6?(n/1e6).toLocaleString('de-DE',{maximumFractionDigits:1})+' MB':Math.max(1,Math.round(n/1e3))+' KB';
 
 /* PDF-Anzeige mit pdf.js (liegt im Repo unter vendor/, wird erst bei Bedarf geladen) */
@@ -385,7 +414,7 @@ function closeViewer(){viewerTok++;const V=document.getElementById('viewer');if(
 
 /* Verschlüsselte Sicherung: enthält nur den bereits verschlüsselten Tresor */
 async function exportBackup(){
-  db.meta=Object.assign({},db.meta,{lastBackup:iso(T0)});
+  db.meta=Object.assign({},db.meta,{lastBackup:iso(T0),dirty:0});
   await save();
   const v=readVault();if(!v){toast('Es gibt noch nichts zu sichern.');return}
   const files={};
@@ -403,7 +432,8 @@ function readBackupFile(file){return new Promise((res,rej)=>{const r=new FileRea
   r.readAsText(file)})}
 async function restoreVault(o){let fileErr=false;
   try{await fileClear();for(const [id,f] of Object.entries(o.files||{}))await filePut(id,{iv:fromB64(f.iv),ct:fromB64(f.ct).buffer})}catch(x){fileErr=true}
-  localStorage.setItem(VKEY,JSON.stringify(o.vault));key=null;db=null;closeViewer();closeSheet(false);main.innerHTML='';showLock();
+  const vj=JSON.stringify(o.vault);try{await filePut(MIRROR,vj)}catch(e){}
+  localStorage.setItem(VKEY,vj);bootInfo={orphans:0,broken:false};key=null;db=null;closeViewer();closeSheet(false);main.innerHTML='';showLock();
   toast(fileErr?'Sicherung geladen, aber nicht alle Dokumente passten in den Speicher. Entsperre mit dem Passwort, das beim Sichern galt.':'Sicherung geladen. Entsperre sie mit dem Passwort, das beim Sichern galt.')}
 
 /* Kalenderexport (.ics) mit Erinnerung 7 Tage und 1 Tag vorher */
@@ -521,8 +551,9 @@ function render(mode){
   document.getElementById('banner').innerHTML=hasEx?`<div class="banner"><span>Du siehst Beispieleinträge, damit du die App ausprobieren kannst.</span><button type="button" id="clearEx">Beispiele entfernen</button></div>`:'';
   const own=db.devices.some(x=>!x.ex)||db.contracts.some(x=>!x.ex);
   const lb=db.meta&&db.meta.lastBackup?parse(db.meta.lastBackup):null;
-  if(own&&(!lb||days(lb)<-30)){
-    document.getElementById('banner').insertAdjacentHTML('beforeend',`<div class="banner" style="background:var(--warn-soft)"><span>${lb?'Letzte Sicherung vor '+(-days(lb))+' Tagen.':'Du hast noch keine Sicherung.'} Ohne Sicherung sind bei Handyverlust alle Daten weg.</span><button type="button" id="bkNow" style="color:var(--warn)">Jetzt sichern</button></div>`);
+  const dirty=db.meta&&db.meta.dirty||0;
+  if(own&&(!lb||days(lb)<-14||dirty>=5)){
+    document.getElementById('banner').insertAdjacentHTML('beforeend',`<div class="banner" style="background:var(--warn-soft)"><span>${!lb?'Du hast noch keine Sicherung.':dirty>=5?dirty+' Änderungen seit der letzten Sicherung.':'Letzte Sicherung vor '+(-days(lb))+' Tagen.'} Ohne Sicherung sind bei Handyverlust, Browserwechsel oder gelöschten Websitedaten alle Daten weg.</span><button type="button" id="bkNow" style="color:var(--warn)">Jetzt sichern</button></div>`);
     document.getElementById('bkNow').onclick=exportBackup;
   }
   const ce=document.getElementById('clearEx'); if(ce) ce.onclick=()=>{db.devices=db.devices.filter(x=>!x.ex);db.contracts=db.contracts.filter(x=>!x.ex);save();buzz(10);render('rows')};
@@ -742,7 +773,7 @@ function openDetail(kind,id,from){
 }
 function armDelete(s,fn){const b=s.querySelector('#del');let armed=false;
   b.onclick=()=>{if(!armed){armed=true;buzz(10);b.classList.add('sure');b.textContent='Wirklich löschen?';setTimeout(()=>{if(b.isConnected){armed=false;b.classList.remove('sure');b.textContent='Löschen'}},4000);return}
-    buzz([10,40,30]);fn();save();closeSheet();render('rows')}}
+    buzz([10,40,30]);fn();if(db)db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});save();closeSheet();render('rows')}}
 
 /* Logo: quadratisch, max. 160 px, Transparenz bleibt erhalten */
 function shrinkLogo(file){return new Promise((res,rej)=>{if(file.size>8e6)return rej(new Error('big'));const r=new FileReader();r.onload=()=>{const img=new Image();
@@ -869,7 +900,7 @@ function openForm(kind,item,camera,tpl){
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
       }
-      filter='alle';save();D.cleanup();closeSheet();render(item?undefined:'rows');
+      filter='alle';db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});save();D.cleanup();closeSheet();render(item?undefined:'rows');
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
@@ -1096,7 +1127,7 @@ function tstep(){traf=0;
 
 document.getElementById('menuBtn').onclick=()=>{setFan(false);openMenu()};
 document.getElementById('lockBtn').onclick=()=>lock(true);
-showLock();
+boot();
 
 /* Service Worker: offline nutzbar, Hinweis bei neuer Version */
 if('serviceWorker' in navigator){

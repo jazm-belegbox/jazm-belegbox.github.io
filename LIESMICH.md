@@ -1,4 +1,4 @@
-# Belegbox – Test-App 0.5.2.0
+# Belegbox – Test-App 0.5.3.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server und keine Verbindung zu fremden Diensten.
 
@@ -44,6 +44,8 @@ Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem P
 - **Kein Passwort-Reset möglich.** Passwort vergessen = Daten weg (außer du hast es im Passwortmanager).
 
 ## Sicherung
+
+Der verschlüsselte Tresor liegt doppelt im Browser (localStorage und IndexedDB). Fehlt eine Kopie oder ist sie beschädigt, stellt die App sie beim Start aus der anderen wieder her. Gegen Browserwechsel, Deinstallieren der App oder gelöschte Websitedaten hilft nur die Sicherungsdatei. Die App erinnert nach 14 Tagen oder 5 Änderungen.
 
 Daten → „Sicherung erstellen“. Die Datei (`.belegbox`) ist mit dem Passwort verschlüsselt, das beim Sichern galt, und enthält auch alle PDFs und Dokumente. Über das Teilen-Menü direkt in die Cloud legen. Die App erinnert, wenn die letzte Sicherung älter als 30 Tage ist.
 
