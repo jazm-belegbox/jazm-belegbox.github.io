@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.5.0.0';
+const APP_VERSION='0.5.1.0';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -464,6 +464,13 @@ function deviceInfo(d){
   const ends=[{typ:'Gewährleistung',date:gew},gar&&{typ:'Herstellergarantie',date:gar}].filter(Boolean).filter(x=>days(x.date)>=0).sort((a,b)=>b.date-a.date);
   return {kauf,gew,gar,best:ends[0]||null};
 }
+/* Ratenkauf: feste Monatsrate, erste Rate an einem Datum, danach jeden Monat am selben Tag */
+function rateInfo(d){const r=d.rate;if(!r||!(Number(r.betrag)>0)||!(Number(r.anzahl)>0)||!r.start)return null;
+  const n=Math.round(Number(r.anzahl)),b=Number(r.betrag),start=parse(r.start);let paid=0;
+  while(paid<n&&days(addMonths(start,paid))<=0)paid++;
+  const total=b*n+Number(r.anzahlung||0);
+  return {n,b,paid,rest:n-paid,restschuld:(n-paid)*b,next:paid<n?addMonths(start,paid):null,last:addMonths(start,n-1),
+    total,mehr:Number(d.preis)>0?total-Number(d.preis):null,aktiv:paid<n,f:paid/n}}
 function devPill(d){
   const i=deviceInfo(d);
   if(!i.best) return '<span class="pill p-none">Kein Schutz</span>';
@@ -485,7 +492,8 @@ function upcoming(){
     if(n<=60) ev.push({date:i.by,n,title:c.anbieter,sub:`Kündigungsfrist · sonst Verlängerung um ${c.verl==12?'1 Jahr':c.verl+' Monat'+(c.verl>1?'e':'')}`,kind:'c',id:c.id})});
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['Gewährleistung',i.gew],['Herstellergarantie',i.gar]].forEach(([t,dt])=>{if(!dt)return;const n=days(dt);
-      if(n>=0&&n<=90) ev.push({date:dt,n,title:d.name,sub:t+' läuft ab',kind:'d',id:d.id})})});
+      if(n>=0&&n<=90) ev.push({date:dt,n,title:d.name,sub:t+' läuft ab',kind:'d',id:d.id})});
+    const ri=rateInfo(d);if(ri&&ri.aktiv){const n=days(ri.last);if(n>=0&&n<=60)ev.push({date:ri.last,n,title:d.name,sub:`Letzte Rate · danach ${eur(ri.b)} weniger im Monat`,kind:'d',id:d.id})}});
   db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const p=priceChange(c);if(!p)return;const n=days(p.date);
     if(n>=0&&n<=60) ev.push({date:p.date,n,title:c.anbieter,sub:`Neuer Preis ${eur(p.preis)} ${INTERVALL[c.intervall]||''} (bisher ${eur(c.kosten)})`,kind:'c',id:c.id})});
   return ev.sort((a,b)=>a.n-b.n);
@@ -525,10 +533,12 @@ function render(mode){
 
 function viewHome(){
   const act=db.contracts.filter(c=>c.status!=='gekuendigt');
-  const mon=act.reduce((s,c)=>s+monthly(c),0);
+  const raten=db.devices.map(d=>rateInfo(d)).filter(r=>r&&r.aktiv);
+  const mon=act.reduce((s,c)=>s+monthly(c),0)+raten.reduce((s,r)=>s+r.b,0);
   const wert=db.devices.reduce((s,d)=>s+Number(d.preis||0),0);
   const ohne=db.devices.filter(d=>d.nachweis==='keiner').length;
   const byKat={};act.forEach(c=>byKat[c.kategorie]=(byKat[c.kategorie]||0)+monthly(c));
+  if(raten.length)byKat['Ratenkäufe']=raten.reduce((s,r)=>s+r.b,0);
   const kats=Object.entries(byKat).sort((a,b)=>b[1]-a[1]);const max=kats[0]?kats[0][1]:1;
   const ev=upcoming();
   return `<section class="view">
@@ -563,10 +573,10 @@ function ring(f,size,w){const r=(size-w)/2,c=+(2*Math.PI*r).toFixed(2),h=size/2;
     `<circle class="arc" cx="${h}" cy="${h}" r="${r}" stroke-width="${w}" stroke-dasharray="${c}" stroke-dashoffset="${(c*(1-f)).toFixed(2)}" transform="rotate(-90 ${h} ${h})" style="stroke:${ringColor(f)}"/>`}</svg>`}
 function tileWrap(d){const p=prot(d);return `<div class="tw">${ring(p?p.f:null,46,3.5)}${tileFor(d)}</div>`}
 function devRow(d){const i=deviceInfo(d);return `<button type="button" class="row" data-kind="d" data-open="${d.id}">
-  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}${d.hersteller||d.raum?' · ':''}gekauft ${d.geschaetzt?'ca. ':''}${i.kauf.getFullYear()}</div><div class="pl">${devPill(d)}</div></div>
+  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}${d.hersteller||d.raum?' · ':''}gekauft ${d.geschaetzt?'ca. ':''}${i.kauf.getFullYear()}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest}</span>`:'')(rateInfo(d))}</div></div>
   <span class="amt num">${d.preis?eur(d.preis):'–'}</span></button>`}
 function viewDevices(){
-  const F={alle:['Alle',()=>true],schutz:['Schutz aktiv',d=>!!deviceInfo(d).best],bald:['Läuft bald ab',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60}],ohne:['Ohne Nachweis',d=>d.nachweis==='keiner']};
+  const F={alle:['Alle',()=>true],schutz:['Schutz aktiv',d=>!!deviceInfo(d).best],bald:['Läuft bald ab',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60}],ohne:['Ohne Nachweis',d=>d.nachweis==='keiner'],raten:['Ratenkauf',d=>!!rateInfo(d)]};
   const list=db.devices.filter(F[filter]?F[filter][1]:()=>true).sort((a,b)=>a.name.localeCompare(b.name,'de'));
   return `<section class="view">
     <div class="sechead"><h2>Geräte</h2><span class="label num">${list.length} von ${db.devices.length}</span></div>
@@ -668,9 +678,22 @@ function openDetail(kind,id,from){
         <dt>Herstellergarantie</dt><dd>${i.gar?'bis '+fmtD(i.gar)+(days(i.gar)<0?' <span class="pill p-none">abgelaufen</span>':''):'keine'}</dd>
         <dt>Nachweis</dt><dd>${NACHWEIS[d.nachweis]||'–'}</dd>
       </dl>
+      ${(r=>!r?'':`<div class="label" style="margin-bottom:8px">Ratenkauf</div>
+        <div class="rate">
+          <div class="rhead"><b>${r.aktiv?`${r.paid} von ${r.n} Raten bezahlt`:'Komplett abbezahlt'}</b><span class="num">${eur(r.b)}/Monat</span></div>
+          <div class="track"><div class="fill" style="width:${Math.max(r.f>0?3:0,r.f*100)}%"></div></div>
+          <dl class="kv" style="margin:12px 0 0">
+            ${r.aktiv?`<dt>Restschuld</dt><dd><b class="num">${eur(r.restschuld)}</b></dd><dt>Nächste Rate</dt><dd>${fmtD(r.next)} (${inDays(days(r.next))})</dd>`:''}
+            <dt>${r.aktiv?'Letzte Rate':'Letzte Rate war'}</dt><dd>${fmtD(r.last)}</dd>
+            <dt>Gesamtkosten</dt><dd>${eur(r.total)}${r.mehr!=null&&Math.abs(r.mehr)>=.01?` <span class="pill ${r.mehr>0?'p-warn':'p-ok'}">${r.mehr>0?'+'+eur(r.mehr)+' ggü. Kaufpreis':eur(-r.mehr)+' günstiger'}</span>`:r.mehr!=null?' <span class="pill p-ok">0 % Finanzierung</span>':''}</dd>
+            ${d.rate.anzahlung?`<dt>Anzahlung</dt><dd>${eur(d.rate.anzahlung)}</dd>`:''}
+            ${d.rate.bank?`<dt>Finanziert über</dt><dd>${esc(d.rate.bank)}</dd>`:''}
+            ${d.rate.vnr?`<dt>Finanzierungs-Nr.</dt><dd class="num"><span data-rmask>${esc(maskVal(d.rate.vnr))}</span><button type="button" class="reveal" data-rshow>Anzeigen</button></dd>`:''}
+          </dl></div>`)(rateInfo(d))}
       ${docSection(d)}
       <div class="actions"><button type="button" class="btn primary" id="edit">Bearbeiten</button><button type="button" class="btn danger" id="del">Löschen</button></div>`,
       s=>{const pr=s.querySelector('.prot');if(pr&&motion())pr.classList.add('enter');bindDocs(s,d);
+          const rs=s.querySelector('[data-rshow]');if(rs){let o=false;rs.onclick=()=>{o=!o;s.querySelector('[data-rmask]').textContent=o?d.rate.vnr:maskVal(d.rate.vnr);rs.textContent=o?'Verbergen':'Anzeigen'}}
           s.querySelector('#edit').onclick=()=>openForm('d',d);armDelete(s,()=>{(d.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.devices=db.devices.filter(x=>x.id!==id)})},from);
   } else {
     const c=db.contracts.find(x=>x.id===id); if(!c)return; const i=contractInfo(c);
@@ -735,6 +758,16 @@ function openForm(kind,item,camera,tpl){
     <div class="grid2"><label class="field"><span>Kaufdatum *</span><input id="f_kauf" type="date" required value="${iso(T0)}"></label>
       <label class="field"><span>Preis (€)</span><input id="f_preis" type="number" step="0.01" min="0" inputmode="decimal"></label></div>
     <label class="check"><input id="f_ges" type="checkbox"> Kaufdatum nur geschätzt</label>
+    <label class="check"><input id="f_rk" type="checkbox"> Auf Raten gekauft / finanziert</label>
+    <div class="ratebox" id="f_rbox" hidden>
+      <div class="grid2"><label class="field"><span>Monatsrate (€) *</span><input id="f_rb" type="number" step="0.01" min="0" inputmode="decimal"></label>
+        <label class="field"><span>Anzahl Raten *</span><input id="f_rn" type="number" step="1" min="1" max="120" inputmode="numeric" placeholder="z. B. 24"></label></div>
+      <div class="grid2"><label class="field"><span>Erste Rate am *</span><input id="f_rs" type="date"></label>
+        <label class="field"><span>Anzahlung (€)</span><input id="f_ra" type="number" step="0.01" min="0" inputmode="decimal" placeholder="optional"></label></div>
+      <div class="grid2"><label class="field"><span>Finanziert über</span><input id="f_rf" placeholder="z. B. Klarna, Santander"></label>
+        <label class="field"><span>Finanzierungs-Nr.</span><input id="f_rv" autocomplete="off"></label></div>
+      <div class="prev" id="f_rprev" aria-live="polite"></div>
+    </div>
     <div class="grid2"><label class="field"><span>Händler</span><input id="f_hae"></label>
       <label class="field"><span>Herstellergarantie</span><select id="f_gar"><option value="0">keine</option><option value="12">1 Jahr</option><option value="24">2 Jahre</option><option value="36">3 Jahre</option><option value="60">5 Jahre</option></select></label></div>
     <label class="field"><span>Kaufnachweis</span><select id="f_nach">${Object.entries(NACHWEIS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></label>
@@ -782,7 +815,9 @@ function openForm(kind,item,camera,tpl){
         el.value=String(val)};
       if(kind==='d'){set('f_name',src.name);set('f_kat',src.kategorie);set('f_raum',src.raum);set('f_her',src.hersteller);set('f_mod',src.modell);
         set('f_sn',src.sn);set('f_kauf',src.kauf);set('f_preis',src.preis||'');set('f_hae',src.haendler);set('f_gar',src.garantieMonate||0);set('f_nach',src.nachweis);
-        s.querySelector('#f_ges').checked=!!src.geschaetzt}
+        s.querySelector('#f_ges').checked=!!src.geschaetzt;
+        if(src.rate){s.querySelector('#f_rk').checked=true;set('f_rb',src.rate.betrag);set('f_rn',src.rate.anzahl);set('f_rs',src.rate.start);
+          set('f_ra',src.rate.anzahlung||'');set('f_rf',src.rate.bank||'');if(item)set('f_rv',src.rate.vnr||'')}}
       else{set('c_anb',src.anbieter);set('c_kat',src.kategorie);set('c_kd',src.kundennr);set('c_kost',src.kosten);set('c_kn',src.kostenNach==null?'':src.kostenNach);set('c_int',src.intervall);
         set('c_lz',src.laufzeit);set('c_verl',src.verl);set('c_fr',src.frist);set('c_mod',src.modus||'beginn');set('c_end',src.ende||'');
         if(item){if(item.beginn)set('c_beg',item.beginn);set('c_vnr',item.vertragsnr||'')}}
@@ -797,10 +832,14 @@ function openForm(kind,item,camera,tpl){
         let foto=item&&item.foto||'';const f=s.querySelector('#f_foto').files[0];
         const fd=s.querySelector('#f_fotoDel');if(fd&&fd.checked)foto='';
         if(f){try{foto=await shrink(f)}catch(x){err.textContent='Das Foto konnte nicht gelesen werden. Versuch es mit einem JPG oder PNG.';err.hidden=false;return}}
+        let rate=null;
+        if(s.querySelector('#f_rk').checked){
+          if(!(parseFloat(v('f_rb'))>0)||!(parseInt(v('f_rn'))>0)||!v('f_rs')){err.textContent='Bitte Monatsrate, Anzahl Raten und erste Rate ausfüllen.';err.hidden=false;return}
+          rate={betrag:parseFloat(v('f_rb')),anzahl:parseInt(v('f_rn')),start:v('f_rs'),anzahlung:parseFloat(v('f_ra'))||0,bank:v('f_rf'),vnr:v('f_rv')}}
         if(!await commitDocs())return;
         const dd={name:v('f_name'),kategorie:v('f_kat'),raum:v('f_raum'),hersteller:v('f_her'),modell:v('f_mod'),sn:v('f_sn'),
           kauf:v('f_kauf'),geschaetzt:s.querySelector('#f_ges').checked,preis:parseFloat(v('f_preis'))||0,haendler:v('f_hae'),
-          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs};
+          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,rate};
         if(item){Object.assign(item,dd);delete item.ex}else{first=!db.devices.some(x=>!x.ex);db.devices.push(Object.assign({id:uid()},dd))}
         tab='geraete';
       } else {
@@ -821,6 +860,18 @@ function openForm(kind,item,camera,tpl){
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
+    if(kind==='d'){ // Ratenkauf ein-/ausklappen und live durchrechnen
+      const rk=s.querySelector('#f_rk'),box=s.querySelector('#f_rbox'),pv=s.querySelector('#f_rprev');
+      const upd=()=>{box.hidden=!rk.checked;if(!rk.checked)return;
+        const rs=s.querySelector('#f_rs');if(!rs.value&&v('f_kauf'))rs.value=iso(addMonths(parse(v('f_kauf')),1));
+        const r=rateInfo({preis:parseFloat(v('f_preis'))||0,rate:{betrag:v('f_rb'),anzahl:v('f_rn'),start:rs.value,anzahlung:v('f_ra')}});
+        pv.innerHTML=!r?'':`<div class="label">So rechnet die App</div>
+          <div>${r.aktiv?`<b>${r.paid}</b> von ${r.n} Raten bezahlt · Restschuld <b>${eur(r.restschuld)}</b>`:'Bereits komplett abbezahlt'}</div>
+          <div>Letzte Rate <b>${fmtD(r.last)}</b> · gesamt <b>${eur(r.total)}</b>${r.mehr!=null&&r.mehr>.005?` (${eur(r.mehr)} mehr als der Kaufpreis)`:''}</div>`};
+      s.querySelector('#frm').addEventListener('input',upd);s.querySelector('#frm').addEventListener('change',upd);
+      rk.addEventListener('change',()=>{buzz(5);if(rk.checked&&motion())box.animate([{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'none'}],{duration:220,easing:'ease-out'})});
+      upd();
+    }
     if(kind==='c'){ // Logo wählen, Vorschau sofort zeigen
       const li=s.querySelector('#c_logo'),lp=s.querySelector('#c_logoPrev'),ld=s.querySelector('#c_logoDel');
       li.addEventListener('change',async()=>{const f=li.files[0];if(!f)return;

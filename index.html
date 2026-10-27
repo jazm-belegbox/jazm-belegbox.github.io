@@ -253,6 +253,13 @@ body.locked .fan{display:none}
 .prot .hint{display:block}
 .prev{background:var(--accent-soft);border-radius:12px;padding:10px 14px;font-size:14px;display:grid;gap:2px}
 .prev:empty{display:none}
+.ratebox{display:grid;gap:12px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--bg)}
+.rate{background:var(--sunk);border-radius:14px;padding:12px 14px;margin-bottom:16px}
+.rate .rhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+.rate .rhead span{color:var(--muted);font-size:14px}
+.rate .track{height:10px;background:var(--surface);border-radius:99px;overflow:hidden}
+.rate .fill{height:100%;background:var(--accent);border-radius:99px;transform-origin:left}
+@media (prefers-reduced-motion:no-preference){.rate .fill{animation:grow .9s var(--ease) .15s backwards}}
 .tile.logo{background:#fff;border:1px solid var(--line)}
 .tile.logo img{object-fit:contain;padding:4px}
 .hlogo{width:34px;height:34px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:9px;padding:3px;vertical-align:middle;margin:-4px 10px 0 0}
