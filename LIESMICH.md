@@ -1,4 +1,4 @@
-# Belegbox – Test-App 0.8.0.7
+# Belegbox – Test-App 0.8.1.8
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
 
@@ -77,7 +77,7 @@ Daten → „Fristen in Kalender exportieren“ erzeugt eine `.ics`-Datei mit Er
 
 ## Testen
 
-- Passwort anlegen, Beispieldaten anschauen, eigene Einträge anlegen
+- Passwort anlegen, eigene Einträge anlegen
 - Sperren, falsches und richtiges Passwort probieren
 - Sicherung erstellen, App-Daten im Browser löschen, Sicherung wiederherstellen
 - Kalenderexport öffnen und prüfen, ob die Erinnerungen ankommen

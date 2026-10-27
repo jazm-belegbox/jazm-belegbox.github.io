@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.8.0.7';
+const APP_VERSION='0.8.1.8';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -28,27 +28,7 @@ const INTERVALL={1:'monatlich',3:'vierteljährlich',12:'jährlich'};
 const DEV_KAT=['Technik','Küche','Haushalt','Werkzeug','Möbel','Sonstiges'];
 const CON_KAT=['Streaming','Handy & Internet','Versicherung','Energie','Fitness','Software','Sonstiges'];
 
-function samples(){
-  const m=(mo,d)=>iso(addDays(addMonths(T0,mo),d||0));
-  return {
-    devices:[
-      {id:uid(),ex:1,name:'OLED-Fernseher 55"',kategorie:'Technik',hersteller:'LG',modell:'OLED55C3',sn:'307KRSL4X912',raum:'Wohnzimmer',kauf:m(-24,40),geschaetzt:false,preis:1299,haendler:'MediaMarkt',garantieMonate:0,nachweis:'beleg'},
-      {id:uid(),ex:1,name:'Waschmaschine',kategorie:'Haushalt',hersteller:'Bosch',modell:'WGG14403',sn:'FD9812 004417',raum:'Bad',kauf:m(-38),geschaetzt:false,preis:649,haendler:'Otto',garantieMonate:60,nachweis:'konto'},
-      {id:uid(),ex:1,name:'Kaffeevollautomat',kategorie:'Küche',hersteller:"De'Longhi",modell:'Magnifica Evo',sn:'2234A0091',raum:'Küche',kauf:m(-8),geschaetzt:false,preis:549,haendler:'Amazon',garantieMonate:0,nachweis:'mail'},
-      {id:uid(),ex:1,name:'Laptop',kategorie:'Technik',hersteller:'Lenovo',modell:'ThinkPad E14',sn:'PF4XK29L',raum:'Arbeitszimmer',kauf:m(-23,12),geschaetzt:false,preis:1099,haendler:'Cyberport',garantieMonate:36,nachweis:'mail'},
-      {id:uid(),ex:1,name:'Akku-Bohrschrauber',kategorie:'Werkzeug',hersteller:'Makita',modell:'DDF484',sn:'',raum:'Keller',kauf:m(-74),geschaetzt:true,preis:180,haendler:'',garantieMonate:0,nachweis:'keiner'},
-      {id:uid(),ex:1,name:'Kühlschrank',kategorie:'Küche',hersteller:'Liebherr',modell:'CNd 5203',sn:'84.112.556.3',raum:'Küche',kauf:m(-62),geschaetzt:true,preis:799,haendler:'',garantieMonate:0,nachweis:'keiner'}
-    ],
-    contracts:[
-      {id:uid(),ex:1,anbieter:'Fitnessstudio',kategorie:'Fitness',kosten:29.9,intervall:1,beginn:m(-12,100),laufzeit:12,verl:12,frist:90,kundennr:'M-20931',status:'aktiv'},
-      {id:uid(),ex:1,anbieter:'Handyvertrag Vodafone',kategorie:'Handy & Internet',kosten:34.99,intervall:1,beginn:m(-24,45),laufzeit:24,verl:1,frist:30,kundennr:'118 442 907',status:'aktiv'},
-      {id:uid(),ex:1,anbieter:'Netflix',kategorie:'Streaming',kosten:13.99,intervall:1,beginn:m(-20,-9),laufzeit:1,verl:1,frist:0,kundennr:'',status:'aktiv'},
-      {id:uid(),ex:1,anbieter:'Stadtwerke Strom',kategorie:'Energie',kosten:78,intervall:1,beginn:m(-15),laufzeit:12,verl:1,frist:30,kundennr:'4410-2287',status:'aktiv'},
-      {id:uid(),ex:1,anbieter:'Hausratversicherung',kategorie:'Versicherung',kosten:89.4,intervall:12,beginn:m(-34,20),laufzeit:12,verl:12,frist:90,kundennr:'HR-7781204',status:'aktiv'},
-      {id:uid(),ex:1,anbieter:'Disney+',kategorie:'Streaming',kosten:9.99,intervall:1,beginn:m(-6,12),laufzeit:1,verl:1,frist:0,kundennr:'',status:'gekuendigt'}
-    ]
-  };
-}
+/* Beispieldaten gibt es nicht mehr; ältere, unveränderte Beispieleinträge lassen sich über den Hinweis oben entfernen. */
 
 /* Verschlüsselter Tresor (Format 2)
    - Ein zufälliger Datenschlüssel (256 Bit) verschlüsselt alle Einträge mit AES-256-GCM.
@@ -210,12 +190,12 @@ async function unlock(pw){
   vmeta={iter:v.iter||ITER,salt:v.salt,wrapPw:await seal(kek,dekRaw),bio:null,vid:toB64(rnd(12))};
   await save();
 }
-async function createVault(pw,withEx){
+async function createVault(pw){
   const salt=rnd(16);const kek=await deriveKey(pw,salt,ITER);
   dekRaw=rnd(32);key=await importDek(dekRaw);
   vmeta={iter:ITER,salt:toB64(salt),wrapPw:await seal(kek,dekRaw),bio:null,vid:toB64(rnd(12))};
   let old=null;try{old=JSON.parse(localStorage.getItem(KEY))}catch(e){}
-  db=old&&Array.isArray(old.devices)?old:withEx?samples():{devices:[],contracts:[]};
+  db=old&&Array.isArray(old.devices)?old:{devices:[],contracts:[]};
   await persist();
   try{localStorage.removeItem(KEY)}catch(e){} // alte unverschlüsselte Daten entfernen
 }
@@ -334,7 +314,6 @@ function showLock(closing){
       <p>Alle Einträge und Fotos werden mit deinem Passwort verschlüsselt, bevor sie gespeichert werden. Ohne Passwort sind sie nicht lesbar.</p>
       <label class="field"><span>Passwort (mind. 10 Zeichen)</span><input id="lp1" type="password" autocomplete="new-password" minlength="10"></label>
       <label class="field"><span>Passwort wiederholen</span><input id="lp2" type="password" autocomplete="new-password"></label>
-      <label class="check"><input id="lex" type="checkbox" checked> Mit Beispieleinträgen starten</label>
       ${bootInfo.broken?`<div class="note" style="background:var(--crit-soft)"><b>Achtung:</b> Auf diesem Gerät liegt ein Tresor, der sich nicht lesen lässt. Speichere ihn zuerst, bevor du neu anfängst.
         <button type="button" class="linkbtn" id="lraw" style="display:block;color:var(--crit)">Beschädigten Tresor als Datei speichern</button></div>`:''}
       ${bootInfo.orphans?`<div class="note" style="background:var(--crit-soft)"><b>Achtung:</b> Auf diesem Gerät liegen noch ${bootInfo.orphans>1?bootInfo.orphans+' verschlüsselte Dokumente':'ein verschlüsseltes Dokument'}, aber kein Tresor. Hast du eine Sicherung, stell sie unten wieder her, statt neu anzufangen.</div>`:''}
@@ -373,7 +352,7 @@ function showLock(closing){
       if(p1.length<10)return fail('Das Passwort braucht mindestens 10 Zeichen.');
       if(p1!==p2)return fail('Die beiden Passwörter stimmen nicht überein.');}
     go.disabled=true;go.textContent=setup?'Wird verschlüsselt …':'Wird entschlüsselt …';V.classList.add('busy');
-    try{ setup?await createVault(p1,L.querySelector('#lex').checked):await unlock(p1) }
+    try{ setup?await createVault(p1):await unlock(p1) }
     catch(x){return fail(setup?'Der Tresor konnte nicht angelegt werden. Prüfe, ob der Browser Speicher erlaubt.':'Das Passwort ist falsch.')}
     opened();
   });
@@ -1218,7 +1197,8 @@ function openMenu(){
     <p class="hint" style="margin-bottom:10px">${vmeta&&vmeta.bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die Belegbox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „Belegbox“ in deinem Passwortmanager angelegt.'}</p>
     <div class="actions" style="margin-bottom:6px"><button type="button" class="btn${vmeta&&vmeta.bio?'':' primary'}" id="bioBtn">${vmeta&&vmeta.bio?'Ausschalten':'Einschalten'}</button></div>
     <p class="hint" id="bioMsg" hidden></p><div style="height:12px"></div>`:''}
-</div></details><details class="acc" data-acc="gh"${menuAcc==='gh'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></span><span class="at"><b>Sicherung in GitHub</b><small>${ghCfg()?(ghStat.err?'Problem – bitte ansehen':ghStat.at?'gesichert '+relTime(ghStat.at):'verbunden'):'nicht eingerichtet'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
+</div></details><details class="acc" data-acc="gh"${menuAcc==='gh'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></span><span class="at"><b>Sicherung</b><small>${ghCfg()?(ghStat.err?'GitHub: Problem – bitte ansehen':'GitHub '+(ghStat.at?'✓ '+relTime(ghStat.at):'verbunden')):'GitHub aus'}${db.meta&&db.meta.lastBackup?' · Datei '+fmtD(parse(db.meta.lastBackup)):' · keine Datei'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
+    <div class="label" style="margin:12px 0 8px">Automatisch in GitHub</div>
     ${ghCfg()?`<p class="hint" style="margin-bottom:6px">Nach jeder Änderung landet der verschlüsselte Tresor in <b>${esc(db.meta.gh.owner)}/${esc(db.meta.gh.repo)}</b>. GitHub sieht nur verschlüsselte Daten.</p>
       <p class="hint" id="ghStatus" style="margin-bottom:10px;display:flex;gap:8px;align-items:center">${ghStatusText()}</p>
       ${ghStat.conflict?`<div class="note" style="background:var(--crit-soft);margin-bottom:10px">Im Repo liegt ein anderer Tresor (z. B. von einem früheren Gerät). Er bleibt in der Versionsgeschichte von GitHub erhalten, wenn du ihn ersetzt.
@@ -1230,6 +1210,14 @@ function openMenu(){
       <label class="field" style="margin-top:12px"><span>Zugangsschlüssel (github_pat_…)</span><input id="gh_t" type="password" autocomplete="off"></label>
       <p class="hint" id="gh_msg" hidden></p>
       <div class="actions" style="margin:10px 0 18px"><button type="button" class="btn primary" id="gh_go">Verbinden & sichern</button></div>`}
+    <div class="label" style="margin:4px 0 8px;padding-top:14px;border-top:1px solid var(--line)">Sicherungsdatei</div>
+    <p class="hint" style="margin-bottom:10px">Zusätzlich oder statt GitHub: eine Datei, die du selbst ablegst. Sie ist mit deinem aktuellen Passwort verschlüsselt und enthält auch alle PDFs und Dokumente. ${db.meta&&db.meta.lastBackup?'Letzte Sicherung: '+fmtD(parse(db.meta.lastBackup))+'.':'Bisher keine Sicherung.'}</p>
+    <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="bkGo">Sicherung erstellen</button>
+      <label class="btn" style="cursor:pointer">Sicherung laden<input id="bkIn" type="file" accept=".belegbox,application/json" hidden></label></div>
+    <p class="hint" id="bkMsg" hidden></p>
+    <div id="bkConfirm" hidden style="margin:8px 0"><p class="hint" style="color:var(--crit);margin-bottom:8px">Die Daten auf diesem Gerät werden durch die Sicherung ersetzt.</p>
+      <div class="actions"><button type="button" class="btn danger sure" id="bkYes">Ersetzen</button><button type="button" class="btn" id="bkNo">Abbrechen</button></div></div>
+    <p class="hint" style="margin:6px 0 18px">${persisted===true?'Dauerhafter Speicher ist aktiv.':persisted===false?'Der Browser hat dauerhaften Speicher nicht zugesagt. Installiere die App auf dem Startbildschirm und sichere regelmäßig.':''}</p>
 </div></details><details class="acc" data-acc="erin"${menuAcc==='erin'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/></svg></span><span class="at"><b>Erinnerungen</b><small>${db.meta&&db.meta.remind?'an':'aus'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
     ${'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="hint" style="margin-bottom:10px">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die Belegbox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
       <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="btn" id="rmOff">Ausschalten</button></div>`
@@ -1242,16 +1230,8 @@ function openMenu(){
     <p class="hint" style="margin-bottom:10px">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
     <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
     <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="icsGo">Fristen in Kalender exportieren</button></div>
-</div></details><details class="acc" data-acc="datei"${menuAcc==='datei'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5"/></svg></span><span class="at"><b>Sicherungsdatei</b><small>${db.meta&&db.meta.lastBackup?'zuletzt '+fmtD(parse(db.meta.lastBackup)):'noch keine erstellt'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    <p class="hint" style="margin-bottom:10px">Die Sicherung ist mit deinem aktuellen Passwort verschlüsselt und enthält auch alle PDFs und Dokumente. ${db.meta&&db.meta.lastBackup?'Letzte Sicherung: '+fmtD(parse(db.meta.lastBackup))+'.':'Bisher keine Sicherung.'}</p>
-    <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="bkGo">Sicherung erstellen</button>
-      <label class="btn" style="cursor:pointer">Sicherung laden<input id="bkIn" type="file" accept=".belegbox,application/json" hidden></label></div>
-    <p class="hint" id="bkMsg" hidden></p>
-    <div id="bkConfirm" hidden style="margin:8px 0"><p class="hint" style="color:var(--crit);margin-bottom:8px">Die Daten auf diesem Gerät werden durch die Sicherung ersetzt.</p>
-      <div class="actions"><button type="button" class="btn danger sure" id="bkYes">Ersetzen</button><button type="button" class="btn" id="bkNo">Abbrechen</button></div></div>
-    <p class="hint" style="margin:6px 0 18px">${persisted===true?'Dauerhafter Speicher ist aktiv.':persisted===false?'Der Browser hat dauerhaften Speicher nicht zugesagt. Installiere die App auf dem Startbildschirm und sichere regelmäßig.':''}</p>
 </div></details><details class="acc" data-acc="eintr"${menuAcc==='eintr'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="at"><b>Einträge</b><small>${db.devices.length} Geräte · ${db.contracts.length} Verträge</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    <div class="actions"><button type="button" class="btn" id="m_ex">Beispieldaten laden</button><button type="button" class="btn danger" id="del">Alle Einträge löschen</button></div></div></details>`,
+    <div class="actions"><button type="button" class="btn danger" id="del">Alle Einträge löschen</button></div></div></details>`,
   s=>{s.querySelectorAll('details.acc[data-acc]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open){menuAcc=d.dataset.acc;
        s.querySelectorAll('details.acc[open]').forEach(o=>{if(o!==d)o.open=false});buzz(4)}else if(menuAcc===d.dataset.acc)menuAcc=null}));
      s.querySelector('#pwf').addEventListener('submit',async e=>{e.preventDefault();const er=s.querySelector('#pwerr'),go=s.querySelector('#pwgo');
@@ -1298,13 +1278,12 @@ function openMenu(){
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
-     s.querySelector('#bkGo').onclick=exportBackup;
+     s.querySelector('#bkGo').onclick=async()=>{await exportBackup();if(root.firstElementChild&&db)openMenu()};
      let pending=null;const msg=s.querySelector('#bkMsg'),cf=s.querySelector('#bkConfirm'),bi=s.querySelector('#bkIn');
      bi.addEventListener('change',async()=>{const file=bi.files[0];if(!file)return;msg.hidden=true;
        try{pending=await readBackupFile(file);cf.hidden=false}catch(x){msg.textContent=x.message;msg.style.color='var(--crit)';msg.hidden=false}bi.value=''});
      s.querySelector('#bkNo').onclick=()=>{pending=null;cf.hidden=true};
      s.querySelector('#bkYes').onclick=()=>{if(pending)saving.then(()=>restoreVault(pending))};
-     s.querySelector('#m_ex').onclick=()=>{const sm=samples();db.devices=db.devices.filter(x=>!x.ex).concat(sm.devices);db.contracts=db.contracts.filter(x=>!x.ex).concat(sm.contracts);save();closeSheet();render('rise')};
      armDelete(s,()=>{db={devices:[],contracts:[]};fileClear().catch(()=>{})})});
 }
 
