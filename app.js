@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.6.5.2';
+const APP_VERSION='0.6.6.3';
 const KEY='belegbox-v1';
 let T0=sod(new Date());
 function sod(d){const x=new Date(d);x.setHours(0,0,0,0);return x}
@@ -13,7 +13,11 @@ const fmtD=d=>d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'
 const eur=n=>Number(n||0).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const uid=()=>Math.random().toString(36).slice(2,10);
-const inDays=n=>n===0?'heute':n===1?'morgen':n<0?'vor '+(-n)+' Tagen':'in '+n+' Tagen';
+const spanTxt=n=>{if(n<60)return n+' Tag'+(n===1?'':'en');const m=Math.round(n/30.44);
+  if(m<24)return m+' Monaten';const y=Math.floor(m/12),r=m%12;return y+' Jahren'+(r?' und '+r+' Monat'+(r>1?'en':''):'')};
+const restTxt=n=>{if(n<60)return n+' Tag'+(n===1?'':'e');const m=Math.round(n/30.44);
+  if(m<24)return m+' Monate';const y=Math.floor(m/12),r=m%12;return y+' Jahre'+(r?' und '+r+' Monat'+(r>1?'e':''):'')};
+const inDays=n=>n===0?'heute':n===1?'morgen':n<0?'vor '+(-n)+' Tagen':'in '+spanTxt(n);
 
 const NACHWEIS={beleg:'Kassenbon / Rechnung',konto:'Kontoauszug',mail:'Bestellmail',keiner:'Kein Nachweis'};
 const INTERVALL={1:'monatlich',3:'vierteljährlich',12:'jährlich'};
@@ -636,13 +640,13 @@ function conPill(c){
 function upcoming(){
   const ev=[];
   db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const i=contractInfo(c);if(!i.by)return;const n=days(i.by);
-    if(n<=60) ev.push({date:i.by,n,title:c.anbieter,sub:`Kündigungsfrist · sonst Verlängerung um ${c.verl==12?'1 Jahr':c.verl+' Monat'+(c.verl>1?'e':'')}`,kind:'c',id:c.id})});
+    if(n<=60) ev.push({date:i.by,n,title:c.anbieter,sub:'Letzter Kündigungstag',kind:'c',id:c.id})});
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['Gewährleistung',i.gew],['Herstellergarantie',i.gar]].forEach(([t,dt])=>{if(!dt)return;const n=days(dt);
-      if(n>=0&&n<=90) ev.push({date:dt,n,title:d.name,sub:t+' läuft ab',kind:'d',id:d.id})});
-    const ri=rateInfo(d);if(ri&&ri.aktiv){const n=days(ri.last);if(n>=0&&n<=60)ev.push({date:ri.last,n,title:d.name,sub:`Letzte Rate · danach ${eur(ri.b)} weniger im Monat`,kind:'d',id:d.id})}});
+      if(n>=0&&n<=90) ev.push({date:dt,n,title:d.name,sub:'Ende '+t,kind:'d',id:d.id})});
+    const ri=rateInfo(d);if(ri&&ri.aktiv){const n=days(ri.last);if(n>=0&&n<=60)ev.push({date:ri.last,n,title:d.name,sub:`Letzte Rate · dann ${eur(ri.b)} weniger`,kind:'d',id:d.id})}});
   db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const p=priceChange(c);if(!p)return;const n=days(p.date);
-    if(n>=0&&n<=60) ev.push({date:p.date,n,title:c.anbieter,sub:`Neuer Preis ${eur(p.preis)} ${INTERVALL[c.intervall]||''} (bisher ${eur(c.kosten)})`,kind:'c',id:c.id})});
+    if(n>=0&&n<=60) ev.push({date:p.date,n,title:c.anbieter,sub:`Neuer Preis ${eur(p.preis)} (bisher ${eur(c.kosten)})`,kind:'c',id:c.id})});
   return ev.sort((a,b)=>a.n-b.n);
 }
 
@@ -653,11 +657,26 @@ const noteBlock=it=>it.notiz?`<div class="label" style="margin-bottom:8px">Notiz
 /* Kleines Bild für „Demnächst fällig“: Logo, Gerätefoto oder PDF-Vorschau, sonst Anfangsbuchstabe */
 function evMini(e){
   if(e.kind==='c'){const c=db.contracts.find(x=>x.id===e.id);if(!c)return '';
-    return c.logo?`<span class="mini logo"><img src="${c.logo}" alt=""></span>`:`<span class="mini">${esc(c.anbieter.charAt(0).toUpperCase())}</span>`}
+    return c.logo?`<span class="mini logo"><img src="${c.logo}" alt=""></span>`:`<span class="mini ic">${catIcon(c.kategorie)}</span>`}
   const d=db.devices.find(x=>x.id===e.id);if(!d)return '';
   const t=devThumb(d);
-  return t?`<span class="mini"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></span>`:`<span class="mini">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</span>`}
-function conTile(c){return c.logo?`<div class="tile logo"><img src="${c.logo}" alt=""></div>`:`<div class="tile">${esc(c.anbieter.charAt(0).toUpperCase())}</div>`}
+  return t?`<span class="mini"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></span>`:`<span class="mini ic">${catIcon(d.kategorie)}</span>`}
+const ICON_PATHS={
+  'Technik':'<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  'Küche':'<path d="M5 9h12v6a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z"/><path d="M17 11h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M9 3c-1 1.2 1 2 0 3.5M13 3c-1 1.2 1 2 0 3.5"/>',
+  'Haushalt':'<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="13" r="4.5"/><path d="M8 6.5h.01M11 6.5h.01"/>',
+  'Werkzeug':'<path d="M14.7 6.3a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.7-7.7a4 4 0 0 0-2-2z"/><path d="M5 19l2-2"/>',
+  'Möbel':'<path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M3 13a2 2 0 0 1 4 0v2h10v-2a2 2 0 0 1 4 0v4H3z"/><path d="M5 17v2M19 17v2"/>',
+  'Streaming':'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z"/>',
+  'Handy & Internet':'<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+  'Versicherung':'<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/>',
+  'Energie':'<path d="M13 2L5 13h6l-1 9 8-11h-6z"/>',
+  'Fitness':'<path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/>',
+  'Software':'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 13l-2 2 2 2M12 17h4"/>',
+  'Sonstiges':'<path d="M21 8l-9-5-9 5 9 5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/>'
+};
+function catIcon(k){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[k]||ICON_PATHS.Sonstiges}</svg>`}
+function conTile(c){return c.logo?`<div class="tile logo"><img src="${c.logo}" alt=""></div>`:`<div class="tile ic">${catIcon(c.kategorie)}</div>`}
 /* Kachelbild eines Geräts: gewähltes Titelbild > Foto > erstes Bild-Dokument > erste PDF-Seite */
 function devThumb(d){const ds=(d.docs||[]).filter(x=>x.thumb);
   const c=d.cover&&ds.find(x=>x.id===d.cover);if(c)return {src:c.thumb,top:c.type==='application/pdf'};
@@ -665,13 +684,13 @@ function devThumb(d){const ds=(d.docs||[]).filter(x=>x.thumb);
   const im=ds.find(x=>x.type!=='application/pdf');if(im)return {src:im.thumb,top:false};
   return ds[0]?{src:ds[0].thumb,top:true}:null}
 function tileFor(d){const t=devThumb(d);
-  return t?`<div class="tile"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></div>`:`<div class="tile">${esc((d.hersteller||d.name||'?').charAt(0).toUpperCase())}</div>`}
+  return t?`<div class="tile"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></div>`:`<div class="tile ic">${catIcon(d.kategorie)}</div>`}
 function render(mode){
   if(!db)return;
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
   setInd(TABS.indexOf(tab));
   const hasEx=db.devices.some(x=>x.ex)||db.contracts.some(x=>x.ex);
-  document.getElementById('banner').innerHTML=hasEx?`<div class="banner"><span>Du siehst Beispieleinträge, damit du die App ausprobieren kannst.</span><button type="button" id="clearEx">Beispiele entfernen</button></div>`:'';
+  document.getElementById('banner').innerHTML=hasEx?`<div class="banner slim"><span><b>Beispieldaten</b> zum Ausprobieren</span><button type="button" id="clearEx">Entfernen</button></div>`:'';
   const own=db.devices.some(x=>!x.ex)||db.contracts.some(x=>!x.ex);
   const lb=db.meta&&db.meta.lastBackup?parse(db.meta.lastBackup):null;
   const dirty=db.meta&&db.meta.dirty||0;
@@ -711,11 +730,11 @@ function viewHome(){
     <div class="summary">
       <div><div class="label">Fixkosten pro Monat</div>
         <div class="bigcost"><span class="num" data-count="mon" data-v="${mon}" data-f="eur">${eur(mon)}</span><small><span data-count="jahr" data-v="${mon*12}" data-f="eur">${eur(mon*12)}</span> im Jahr</small></div></div>
-      ${kats.length?`<div class="bars">${kats.map(([k,v])=>`<div class="bar"><span>${esc(k)}</span><div class="track"><div class="fill" style="width:${Math.max(4,v/max*100)}%"></div></div><span class="num">${eur(v)}</span></div>`).join('')}</div>`:''}
+      ${kats.length?`<div class="bars">${kats.map(([k,v])=>`<div class="bar"><span class="bl">${esc(k)}</span><div class="track"><div class="fill" style="width:${Math.max(4,v/max*100)}%"></div></div><span class="num">${eur(v)}</span></div>`).join('')}</div>`:''}
       <div class="facts">
-        <div><b data-count="akt" data-v="${act.length}">${act.length}</b><span>aktive Verträge</span></div>
-        <div><b data-count="ger" data-v="${db.devices.length}">${db.devices.length}</b><span>Geräte · ${eur(wert)}</span></div>
-        <div><b data-count="ohne" data-v="${ohne}">${ohne}</b><span>ohne Kaufnachweis</span></div>
+        <button type="button" class="fact" data-goto="vertraege"><b class="num" data-count="akt" data-v="${act.length}">${act.length}</b><span>Verträge aktiv</span></button>
+        <button type="button" class="fact" data-goto="geraete"><b class="num" data-count="ger" data-v="${db.devices.length}">${db.devices.length}</b><span>Geräte<br><small class="num">Wert ${eur(wert).replace(',00','')}</small></span></button>
+        <button type="button" class="fact${ohne?' warn':''}" data-goto="geraete"><b class="num" data-count="ohne" data-v="${ohne}">${ohne}</b><span>ohne Beleg</span></button>
       </div>
     </div>
     <div class="sechead"><h2>Demnächst fällig</h2><span class="label">nächste 90 Tage</span></div>
@@ -739,13 +758,13 @@ function ring(f,size,w){const r=(size-w)/2,c=+(2*Math.PI*r).toFixed(2),h=size/2;
     `<circle class="arc" cx="${h}" cy="${h}" r="${r}" stroke-width="${w}" stroke-dasharray="${c}" stroke-dashoffset="${(c*(1-f)).toFixed(2)}" transform="rotate(-90 ${h} ${h})" style="stroke:${ringColor(f)}"/>`}</svg>`}
 function tileWrap(d){const p=prot(d);return `<div class="tw">${ring(p?p.f:null,46,3.5)}${tileFor(d)}</div>`}
 function devRow(d){const i=deviceInfo(d);return `<button type="button" class="row" data-kind="d" data-open="${d.id}">
-  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}${d.notiz?NOTEICON:''}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}${d.hersteller||d.raum?' · ':''}gekauft ${d.geschaetzt?'ca. ':''}${i.kauf.getFullYear()}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest}</span>`:'')(rateInfo(d))}</div></div>
+  ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}${d.notiz?NOTEICON:''}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).concat((d.geschaetzt?'ca. ':'')+i.kauf.getFullYear()).join(' · '))}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest}</span>`:'')(rateInfo(d))}</div></div>
   <span class="amt num">${d.preis?eur(d.preis):'–'}</span></button>`}
 function viewDevices(){
-  const F={alle:['Alle',()=>true],schutz:['Schutz aktiv',d=>!!deviceInfo(d).best],bald:['Läuft bald ab',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60}],ohne:['Ohne Nachweis',d=>d.nachweis==='keiner'],raten:['Ratenkauf',d=>!!rateInfo(d)]};
+  const F={alle:['Alle',()=>true],schutz:['Geschützt',d=>!!deviceInfo(d).best],bald:['Endet bald',d=>{const b=deviceInfo(d).best;return b&&days(b.date)<=60}],ohne:['Ohne Beleg',d=>d.nachweis==='keiner'],raten:['Raten',d=>!!rateInfo(d)]};
   const list=db.devices.filter(F[filter]?F[filter][1]:()=>true).sort((a,b)=>a.name.localeCompare(b.name,'de'));
   return `<section class="view">
-    <div class="sechead"><h2>Geräte</h2><span class="label num">${list.length} von ${db.devices.length}</span></div>
+    <div class="sechead"><h2>Geräte</h2><span class="count num">${list.length} von ${db.devices.length}</span></div>
     <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
     <div class="list">${list.length?list.map(devRow).join(''):`<div class="empty">Hier ist noch nichts. Tippe auf „Neu“, um dein erstes Gerät mit Kaufdatum und Beleg anzulegen.</div>`}</div>
   </section>`;
@@ -754,11 +773,11 @@ function viewContracts(){
   const F={alle:['Alle',()=>true],aktiv:['Aktiv',c=>c.status!=='gekuendigt'],bald:['Frist bald',c=>c.status!=='gekuendigt'&&days(contractInfo(c).by)<=45],gek:['Gekündigt',c=>c.status==='gekuendigt']};
   const list=db.contracts.filter(F[filter]?F[filter][1]:()=>true).sort((a,b)=>{const x=contractInfo(a),y=contractInfo(b);return (x.by||x.end)-(y.by||y.end)});
   return `<section class="view">
-    <div class="sechead"><h2>Abos & Verträge</h2><span class="label num">${list.length} von ${db.contracts.length}</span></div>
+    <div class="sechead"><h2>Abos & Verträge</h2><span class="count num">${list.length} von ${db.contracts.length}</span></div>
     <div class="chips">${Object.entries(F).map(([k,v])=>`<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter===k}">${v[0]}</button>`).join('')}</div>
     <div class="list">${list.length?list.map(c=>`<button type="button" class="row" data-kind="c" data-open="${c.id}">
       ${conTile(c)}
-      <div class="main"><div class="t">${esc(c.anbieter)}${c.notiz?NOTEICON:''}</div><div class="s">${esc(c.kategorie)} · ${eur(price(c))} ${INTERVALL[c.intervall]||''}</div><div class="pl">${conPill(c)}</div></div>
+      <div class="main"><div class="t">${esc(c.anbieter)}${c.notiz?NOTEICON:''}</div><div class="s">${esc(c.kategorie)}${Number(c.intervall)!==1?' · '+eur(price(c))+' '+(INTERVALL[c.intervall]||''):''}</div><div class="pl">${conPill(c)}</div></div>
       <span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')
       :`<div class="empty">Noch keine Verträge. Tippe auf „Neu“ und trage Kosten, Laufzeit und Kündigungsfrist ein.</div>`}</div>
   </section>`;
@@ -830,13 +849,13 @@ function openDetail(kind,id,from){
   if(kind==='d'){
     const d=db.devices.find(x=>x.id===id); if(!d)return; const i=deviceInfo(d);
     const p=prot(d);
-    openSheet(head(esc(d.name))+`<div style="margin:-6px 0 14px">${devPill(d)}</div>
+    openSheet(head(esc(d.name))+`${p?'':`<div class="hero h-none"><span class="hl">Status</span><b>Kein Schutz mehr</b><span class="hs">Gewährleistung endete am ${fmtD(i.gew)}</span></div>`}
       ${p?`<div class="prot tiltme"><div class="rw">${ring(p.f,60,5)}<span class="num">${Math.round(p.f*100)}%</span></div>
-        <div><b>noch ${p.left} Tag${p.left===1?'':'e'} ${p.typ}</b><span class="hint">${p.months} Monate Schutz ab Kauf</span></div></div>`:''}
+        <div><span class="hl">${p.typ} bis</span><b class="num">${fmtD(i.best.date)}</b><span class="hint">noch ${restTxt(p.left)} · ${p.months} Monate Schutz ab Kauf</span></div></div>`:''}
       ${d.foto?`<img class="photo tiltme" src="${d.foto}" alt="Foto von ${esc(d.name)}">`:''}
       <dl class="kv">
         <dt>Hersteller / Modell</dt><dd>${esc([d.hersteller,d.modell].filter(Boolean).join(' ')||'–')}</dd>
-        <dt>Seriennummer</dt><dd class="num">${esc(d.sn||'–')}</dd>
+        <dt>Seriennummer</dt><dd class="code">${esc(d.sn||'–')}</dd>
         <dt>Standort</dt><dd>${esc(d.raum||'–')}</dd>
         <dt>Kaufdatum</dt><dd>${d.geschaetzt?'ca. ':''}${fmtD(i.kauf)}${d.geschaetzt?' (geschätzt)':''}</dd>
         <dt>Preis / Händler</dt><dd>${d.preis?eur(d.preis):'–'}${d.haendler?' · '+esc(d.haendler):''}</dd>
@@ -854,34 +873,38 @@ function openDetail(kind,id,from){
             <dt>Gesamtkosten</dt><dd>${eur(r.total)}${r.mehr!=null&&Math.abs(r.mehr)>=.01?` <span class="pill ${r.mehr>0?'p-warn':'p-ok'}">${r.mehr>0?'+'+eur(r.mehr)+' ggü. Kaufpreis':eur(-r.mehr)+' günstiger'}</span>`:r.mehr!=null?' <span class="pill p-ok">0 % Finanzierung</span>':''}</dd>
             ${d.rate.anzahlung?`<dt>Anzahlung</dt><dd>${eur(d.rate.anzahlung)}</dd>`:''}
             ${d.rate.bank?`<dt>Finanziert über</dt><dd>${esc(d.rate.bank)}</dd>`:''}
-            ${d.rate.vnr?`<dt>Finanzierungs-Nr.</dt><dd class="num"><span data-rmask>${esc(maskVal(d.rate.vnr))}</span><button type="button" class="reveal" data-rshow>Anzeigen</button></dd>`:''}
+            ${d.rate.vnr?`<dt>Finanzierungs-Nr.</dt><dd class="code"><span data-rmask>${esc(maskVal(d.rate.vnr))}</span><button type="button" class="reveal" data-rshow>Anzeigen</button></dd>`:''}
           </dl></div>`)(rateInfo(d))}
       ${noteBlock(d)}
       ${docSection(d)}
-      <div class="actions"><button type="button" class="btn primary" id="edit">Bearbeiten</button><button type="button" class="btn danger" id="del">Löschen</button></div>`,
+      <div class="actions two"><button type="button" class="btn primary" id="edit">Bearbeiten</button><button type="button" class="btn danger" id="del">Löschen</button></div>`,
       s=>{const pr=s.querySelector('.prot');if(pr&&motion())pr.classList.add('enter');bindDocs(s,d);
           const rs=s.querySelector('[data-rshow]');if(rs){let o=false;rs.onclick=()=>{o=!o;s.querySelector('[data-rmask]').textContent=o?d.rate.vnr:maskVal(d.rate.vnr);rs.textContent=o?'Verbergen':'Anzeigen'}}
           s.querySelector('#edit').onclick=()=>openForm('d',d);armDelete(s,()=>{(d.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.devices=db.devices.filter(x=>x.id!==id)})},from);
   } else {
     const c=db.contracts.find(x=>x.id===id); if(!c)return; const i=contractInfo(c);
-    openSheet(head((c.logo?`<img class="hlogo" src="${c.logo}" alt="">`:'')+esc(c.anbieter))+`<div style="margin:-6px 0 14px">${conPill(c)}</div>
+    const cn=i.by?days(i.by):null, verl=i.k>0?` · schon ${i.k}× verlängert`:'';
+    const hero=c.status==='gekuendigt'
+      ?`<div class="hero h-none"><span class="hl">Gekündigt</span><b class="num">endet ${fmtD(i.end)}</b><span class="hs">${inDays(days(i.end))}${c.gekuendigtAm?' · gekündigt am '+fmtD(parse(c.gekuendigtAm)):''}</span></div>`
+      :i.offen?`<div class="hero h-ok"><span class="hl">Jederzeit kündbar</span><b class="num">${FRIST(c.frist)}</b><span class="hs">Bei Kündigung heute endet er am ${fmtD(i.end)}</span></div>`
+      :i.by?`<div class="hero ${cn<=14?'h-crit':cn<=45?'h-warn':'h-ok'}"><span class="hl">Spätestens kündigen</span><b class="num">${fmtD(i.by)}</b><span class="hs">${inDays(cn)} · sonst Verlängerung am ${fmtD(i.end)} um ${PER(c.verl)}${verl}</span></div>`
+      :`<div style="margin:-6px 0 14px">${conPill(c)}</div>`;
+    openSheet(head((c.logo?`<img class="hlogo" src="${c.logo}" alt="">`:'')+esc(c.anbieter))+hero+`
       <dl class="kv">
         <dt>Kategorie</dt><dd>${esc(c.kategorie)}</dd>
-        <dt>Kosten</dt><dd>${eur(price(c))} ${INTERVALL[c.intervall]||''} · <span class="num">${eur(monthly(c))}</span>/Monat</dd>
+        <dt>Kosten</dt><dd><span class="num">${eur(price(c))}</span> ${INTERVALL[c.intervall]||''}${Number(c.intervall)!==1?` <span class="muted">(${eur(monthly(c))} pro Monat)</span>`:''}</dd>
         ${(()=>{const p=priceChange(c);if(!p)return '';const past=days(p.date)<=0;
           return `<dt>Preisänderung</dt><dd>${past?`seit ${fmtD(p.date)} ${eur(p.preis)} (vorher ${eur(c.kosten)})`:`ab ${fmtD(p.date)} ${eur(p.preis)} statt ${eur(c.kosten)} <span class="pill ${p.preis>c.kosten?'p-warn':'p-ok'}">${p.preis>c.kosten?'teurer':'günstiger'}</span>`}</dd>`})()}
         ${c.beginn?`<dt>Beginn</dt><dd>${fmtD(parse(c.beginn))}</dd>`:''}
         <dt>Laufzeit</dt><dd>${i.offen?'Unbefristet, jederzeit kündbar':(c.modus==='ende'?`Laufzeitende ${fmtD(parse(c.ende))} eingetragen`:`Mindestens ${PER(c.laufzeit)}`)+`, danach je ${PER(c.verl)}`}</dd>
         <dt>Kündigungsfrist</dt><dd>${Number(c.frist)?c.frist+' Tage':'jederzeit'}</dd>
-        <dt>${c.status==='gekuendigt'?'Endet am':i.offen?'Bei Kündigung heute endet er am':'Nächstes Laufzeitende'}</dt><dd>${fmtD(i.end)}${c.status!=='gekuendigt'&&i.k>0?` <span class="pill p-none">schon ${i.k}× verlängert</span>`:''}</dd>
-        ${i.by?`<dt>Spätestens kündigen</dt><dd><b>${fmtD(i.by)}</b> (${inDays(days(i.by))})</dd>`:''}
-        ${[['kundennr','Kundennummer'],['vertragsnr','Vertragsnummer']].map(([f,l])=>`<dt>${l}</dt><dd class="num">${c[f]?`<span data-mask="${f}">${esc(maskVal(c[f]))}</span><button type="button" class="reveal" data-show="${f}">Anzeigen</button><button type="button" class="reveal" data-copy="${f}">Kopieren</button>`:'–'}</dd>`).join('')}
+        ${[['kundennr','Kundennummer'],['vertragsnr','Vertragsnummer']].map(([f,l])=>`<dt>${l}</dt><dd class="code">${c[f]?`<span data-mask="${f}">${esc(maskVal(c[f]))}</span><button type="button" class="reveal" data-show="${f}">Anzeigen</button><button type="button" class="reveal" data-copy="${f}">Kopieren</button>`:'–'}</dd>`).join('')}
       </dl>
       ${noteBlock(c)}
       ${docSection(c)}
-      <div class="actions">
+      <div class="actions two">
         <button type="button" class="btn primary" id="edit">Bearbeiten</button>
-        ${c.status!=='gekuendigt'?'<button type="button" class="btn" id="cancel">Als gekündigt markieren</button>':'<button type="button" class="btn" id="cancel">Wieder aktiv</button>'}
+        ${c.status!=='gekuendigt'?'<button type="button" class="btn" id="cancel">Gekündigt ✓</button>':'<button type="button" class="btn" id="cancel">Wieder aktiv</button>'}
         <button type="button" class="btn" id="dup">Kopie anlegen</button>
         <button type="button" class="btn danger" id="del">Löschen</button></div>`,
       s=>{bindDocs(s,c);s.querySelectorAll('[data-show]').forEach(b=>{const f=b.dataset.show,sp=s.querySelector(`[data-mask="${f}"]`);let open=false;
