@@ -1,0 +1,82 @@
+# MyBelegBox: Zip-Paket automatisch übernehmen
+# Eine Zip (z. B. belegbox-0_9_0_11.zip) ins Hauptverzeichnis laden – aus der App („App-Update“)
+# oder auf GitHub über „Add file → Upload files“. Dieser Ablauf entpackt sie, prüft Version und Cache,
+# übernimmt die Dateien, löscht die Zip und veröffentlicht.
+name: MyBelegBox Paket übernehmen
+run-name: Paket übernehmen
+
+on:
+  push:
+    branches: [main]
+    paths: ["*.zip"]
+  workflow_dispatch:
+    inputs:
+      aelter: { description: "älteres Paket erlauben (ja/nein)", default: "nein", required: false }
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: belegbox-paket
+  cancel-in-progress: false
+
+jobs:
+  entpacken:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Repo laden
+        uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+
+      - name: Paket übernehmen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AELTER: ${{ inputs.aelter || 'nein' }}
+        run: |
+          set -uo pipefail
+          info()   { echo "::notice title=MyBelegBox::$*"; }
+          fehler() { echo "::error title=MyBelegBox::$*"; exit 1; }
+          abbruch(){ git rm -q -- *.zip && git commit -q -m "Fehlerhaftes Paket entfernt" && git push -q origin HEAD:main; fehler "$* Zip wurde entfernt."; }
+          version_von() { grep -o "APP_VERSION='[0-9.]*'" "$1/app.js" 2>/dev/null | head -1 | grep -o '[0-9.]*[0-9]'; }
+          cache_von()   { grep -o "belegbox-[0-9.]*'" "$1/sw.js" 2>/dev/null | head -1 | grep -o '[0-9.]*[0-9]'; }
+          git config user.name "JAZM"; git config user.email "jazm1309@users.noreply.github.com"
+
+          shopt -s nullglob
+          ZIPS=( *.zip )
+          [ ${#ZIPS[@]} -eq 0 ] && { info "Keine Zip im Hauptverzeichnis – nichts zu tun."; exit 0; }
+          ZIP=$(printf '%s\n' "${ZIPS[@]}" | sort -V | tail -1)
+          [ ${#ZIPS[@]} -gt 1 ] && info "Mehrere Zips gefunden, nehme die neueste: $ZIP"
+
+          P="$RUNNER_TEMP/paket"; rm -rf "$P"; mkdir -p "$P"
+          unzip -q -o "$ZIP" -d "$P" || abbruch "$ZIP lässt sich nicht entpacken."
+          Q="$P"
+          # Zip mit einem einzigen Unterordner (z. B. belegbox/) akzeptieren
+          if [ ! -f "$Q/index.html" ] && [ "$(ls -A "$Q" | wc -l)" = 1 ] && [ -d "$Q/$(ls -A "$Q")" ]; then Q="$Q/$(ls -A "$Q")"; fi
+
+          [ -f "$Q/index.html" ] || abbruch "In $ZIP fehlt die index.html. Nichts übernommen."
+          [ -f "$Q/app.js" ]     || abbruch "In $ZIP fehlt die app.js. Nichts übernommen."
+          [ -f "$Q/sw.js" ]      || abbruch "In $ZIP fehlt die sw.js. Nichts übernommen."
+          V=$(version_von "$Q"); C=$(cache_von "$Q")
+          [ -n "$V" ] || abbruch "Keine Versionsnummer (APP_VERSION) in der app.js gefunden."
+          [ "$V" = "$C" ] || abbruch "Version ($V) und Cache ($C) passen nicht zusammen. Nichts übernommen."
+
+          ALT=$(version_von .)
+          if [ -n "$ALT" ] && [ "$V" != "$ALT" ] && [ "$(printf '%s\n%s\n' "$ALT" "$V" | sort -V | tail -1)" = "$ALT" ] && [ "$AELTER" != "ja" ]; then
+            abbruch "Das Paket ($V) ist älter als die laufende App ($ALT). Nichts übernommen."
+          fi
+
+          # Nie mitnehmen: Repo-Interna
+          for weg in .github .git .nojekyll; do rm -rf "${Q:?}/$weg"; done
+          find "$Q" -name '__MACOSX' -prune -exec rm -rf {} + ; find "$Q" -name '.DS_Store' -delete
+
+          git rm -q -- *.zip
+          cp -a "$Q"/. ./
+          git add -A
+          if git diff --cached --quiet; then info "Keine Änderungen."; exit 0; fi
+          N=$(git diff --cached --name-only | wc -l)
+          git commit -q -m "MyBelegBox $V (Paket $ZIP)"
+          git push -q origin HEAD:main || fehler "Hochladen fehlgeschlagen."
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" >/dev/null 2>&1 || true
+          info "MyBelegBox ${ALT:-?} → $V übernommen ($N Änderungen). In 1–2 Minuten online."
