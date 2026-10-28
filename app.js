@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.8.3.10';
+const APP_VERSION='0.9.0.11';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -1178,6 +1178,80 @@ function openForm(kind,item,camera,tpl){
 }
 
 let menuAcc=null;
+/* ---------- App-Update: Zip-Paket aus der App ins GitHub-Repo laden ----------
+   Ein Ablauf im Repo (.github/workflows/paket.yml) entpackt das Paket, prüft Version und Cache,
+   übernimmt die Dateien und veröffentlicht. Der Schlüssel liegt verschlüsselt im Tresor (db.meta.upd). */
+let UPD='',updEdit=false,updBusy=false;
+const defaultRepo=()=>{const h=location.hostname;return h.endsWith('.github.io')?h.split('.')[0]+'/'+h:''};
+const updCfg=()=>{const u=db&&db.meta&&db.meta.upd;if(!u)return null;const [owner,repo]=u.repo.split('/');return {owner,repo,token:u.token}};
+function setUpd(html){UPD=html;const el=document.getElementById('updStatus');if(el){el.innerHTML=html;el.hidden=!html}}
+const updErr=e=>e&&e.status===401?'Der Zugangsschlüssel ist ungültig oder abgelaufen.':e&&e.status===403?'Keine Berechtigung. Der Schlüssel braucht „Contents: Read and write“ und „Actions: Read“ für dieses Repo.'
+  :e&&e.status===404?'Repo nicht gefunden oder kein Zugriff.':e&&e.status===422?'GitHub hat die Datei abgelehnt (zu groß?).':'Keine Verbindung zu GitHub. Prüfe die Internetverbindung.';
+function bindUpd(s){
+  const go=s.querySelector('#up_go');
+  if(go)go.onclick=async()=>{const repo=s.querySelector('#up_repo').value.trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,''),token=s.querySelector('#up_tok').value.trim();
+    if(!/^[\w.-]+\/[\w.-]+$/.test(repo)||!token){setUpd('❌ Bitte Repo im Format „Besitzer/Name“ und den Zugangsschlüssel eintragen.');return}
+    go.disabled=true;setUpd('⏳ Prüfe Zugang …');
+    try{const [owner,name]=repo.split('/');const info=await ghFetch({owner,repo:name,token},'GET','');
+      if(!info)throw Object.assign(new Error(),{status:404});
+      if(info.permissions&&info.permissions.push===false){go.disabled=false;setUpd('❌ Der Schlüssel darf in dieses Repo nicht schreiben. Setze „Contents“ auf „Read and write“.');return}
+      const wf=await ghFetch({owner,repo:name,token},'GET','/contents/.github/workflows/paket.yml').catch(()=>null);
+      db.meta=Object.assign({},db.meta,{upd:{repo,token}});await save();updEdit=false;
+      setUpd(wf?'✅ Verbunden. Du kannst jetzt Update-Pakete hochladen.':'⚠️ Verbunden, aber im Repo fehlt <b>.github/workflows/paket.yml</b>. Ohne diesen Ablauf werden Pakete nicht entpackt.');
+      buzz(10);openMenu()}
+    catch(x){go.disabled=false;setUpd('❌ '+esc(updErr(x)))}};
+  const cn=s.querySelector('#up_cancel');if(cn)cn.onclick=()=>{updEdit=false;setUpd('');openMenu()};
+  const ch=s.querySelector('#up_chg');if(ch)ch.onclick=()=>{updEdit=true;setUpd('');openMenu()};
+  const off=s.querySelector('#up_off');if(off){let armed=false;off.onclick=()=>{if(!armed){armed=true;off.classList.add('danger','sure');off.textContent='Wirklich trennen?';return}
+    const m=Object.assign({},db.meta);delete m.upd;db.meta=m;save();setUpd('');openMenu();toast('App-Update getrennt. Den Schlüssel kannst du auf GitHub löschen.')}}
+  const inp=s.querySelector('#up_in');
+  if(inp)inp.addEventListener('change',()=>{const f=inp.files[0];inp.value='';if(!f)return;
+    if(!/\.zip$/i.test(f.name)){setUpd('❌ Bitte eine .zip-Datei wählen.');return}
+    if(f.size>50e6){setUpd('❌ Das Paket ist größer als 50 MB.');return}
+    setUpd(`<b>${esc(f.name)}</b> (${fmtSize(f.size)}) hochladen und veröffentlichen?<div class="actions" style="margin-top:8px"><button type="button" class="btn primary" id="up_yes">Hochladen</button><button type="button" class="btn" id="up_no">Abbrechen</button></div>`);
+    const st=document.getElementById('updStatus');
+    st.querySelector('#up_no').onclick=()=>setUpd('');
+    st.querySelector('#up_yes').onclick=()=>updUpload(f)});
+}
+async function updUpload(file){
+  const g=updCfg();if(!g||updBusy)return;updBusy=true;
+  const name=file.name.replace(/[^\w.\-]/g,'_');
+  setUpd('⏳ Lade '+esc(name)+' hoch …');
+  try{
+    const old=await ghFetch(g,'GET','/contents/'+encodeURIComponent(name));
+    const res=await ghFetch(g,'PUT','/contents/'+encodeURIComponent(name),{message:'Paket '+name+' (aus der MyBelegBox)',content:toB64(await file.arrayBuffer()),branch:'main',...(old&&old.sha?{sha:old.sha}:{})});
+    setUpd('⚙️ Hochgeladen – GitHub entpackt und prüft das Paket …');buzz(8);
+    await updWatch(g,res.commit.sha);
+  }catch(e){setUpd('❌ '+esc(updErr(e)))}
+  updBusy=false;
+}
+async function updWatch(g,sha){
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  const t0=Date.now();let run=null;
+  while(Date.now()-t0<5*60e3){
+    await wait(5000);
+    try{const j=await ghFetch(g,'GET','/actions/runs?head_sha='+sha+'&per_page=5');run=(j&&j.workflow_runs&&j.workflow_runs[0])||run}catch(e){}
+    if(run&&run.status==='completed')break;
+  }
+  const link=run&&/^https:\/\/github\.com\//.test(run.html_url||'')?` <a href="${esc(run.html_url)}" target="_blank" rel="noopener noreferrer">Details</a>`:'';
+  if(!run){setUpd('⚠️ Kein Ablauf gefunden. Liegt <b>.github/workflows/paket.yml</b> im Repo, und hat der Schlüssel „Actions: Read“?');return}
+  if(run.status!=='completed'){setUpd('⏳ Der Ablauf dauert länger als üblich.'+link);return}
+  if(run.conclusion!=='success'){
+    let msg='';try{const jobs=await ghFetch(g,'GET','/actions/runs/'+run.id+'/jobs');const id=jobs&&jobs.jobs&&jobs.jobs[0]&&jobs.jobs[0].id;
+      if(id){const ann=await ghFetch(g,'GET','/check-runs/'+id+'/annotations')||[];msg=((ann.find(a=>a.annotation_level==='failure')||ann[0])||{}).message||''}}catch(e){}
+    setUpd('❌ Paket abgelehnt'+(msg?': '+esc(msg.replace(/^MyBelegBox:?\s*/,'')):'.')+link);buzz([30,50,30]);return;
+  }
+  setUpd('✅ Paket übernommen – warte auf die Veröffentlichung …'+link);
+  const t1=Date.now();
+  while(Date.now()-t1<5*60e3){
+    await wait(10000);
+    try{if(swReg){await swReg.update();if(swReg.waiting||swReg.installing){
+      setUpd('🎉 Die neue Version ist online. <button type="button" class="btn primary" id="up_now" style="margin-left:6px;padding:6px 12px">Jetzt aktualisieren</button>');
+      const b=document.getElementById('up_now');if(b)b.onclick=()=>{const w=swReg.waiting||swReg.installing;saving.then(()=>w&&w.postMessage('SKIP_WAITING'))};
+      celebrate('Update online');return}}}catch(e){}
+  }
+  setUpd('✅ Paket übernommen. GitHub braucht noch etwas – die App meldet sich mit „Neue Version verfügbar“, sobald sie online ist.'+link);
+}
 const relTime=t=>{const m=Math.round((Date.now()-t)/6e4);return m<1?'gerade eben':m<60?'vor '+m+' Min.':m<1440?'vor '+Math.round(m/60)+' Std.':'vor '+Math.round(m/1440)+' Tagen'};
 function openMenu(){
   openSheet(head('Daten & Sicherheit')+`
@@ -1230,6 +1304,14 @@ function openMenu(){
     <p class="hint" style="margin-bottom:10px">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
     <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
     <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="icsGo">Fristen in Kalender exportieren</button></div>
+</div></details><details class="acc" data-acc="upd"${menuAcc==='upd'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></svg></span><span class="at"><b>App-Update</b><small>Version ${APP_VERSION}${db.meta&&db.meta.upd?' · GitHub verbunden':''}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
+    ${db.meta&&db.meta.upd&&!updEdit?`<p class="hint" style="margin:12px 0 10px">Verbunden mit <b>${esc(db.meta.upd.repo)}</b>. Lade hier das Zip-Paket einer neuen Version hoch – GitHub entpackt es, prüft die Versionsnummer und veröffentlicht es. Danach erscheint „Neue Version verfügbar“.</p>
+      <div class="actions"><label class="btn primary" style="cursor:pointer">Update-Zip hochladen<input id="up_in" type="file" accept=".zip,application/zip" hidden></label><button type="button" class="btn" id="up_chg">Verbindung ändern</button><button type="button" class="btn" id="up_off">Trennen</button></div>`
+    :`<p class="hint" style="margin:12px 0 10px">Neue Versionen als Zip direkt aus der App veröffentlichen. Dafür brauchst du einen eigenen Fine-grained-Zugangsschlüssel nur für das App-Repo mit den Rechten <b>Contents: Read and write</b> und <b>Actions: Read</b>. Er wird verschlüsselt im Tresor gespeichert. Der Schlüssel der Datensicherung reicht dafür nicht.</p>
+      <label class="field"><span>Repo (Besitzer/Name)</span><input id="up_repo" value="${esc(db.meta&&db.meta.upd?db.meta.upd.repo:defaultRepo())}" autocomplete="off" autocapitalize="off"></label>
+      <label class="field" style="margin-top:10px"><span>Zugangsschlüssel (github_pat_…)</span><input id="up_tok" type="password" autocomplete="off"></label>
+      <div class="actions" style="margin-top:10px"><button type="button" class="btn primary" id="up_go">Prüfen & verbinden</button>${updEdit?'<button type="button" class="btn" id="up_cancel">Abbrechen</button>':''}</div>`}
+    <div id="updStatus" class="updstat"${UPD?'':' hidden'}>${UPD}</div>
 </div></details><details class="acc" data-acc="eintr"${menuAcc==='eintr'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="at"><b>Einträge</b><small>${db.devices.length} Geräte · ${db.contracts.length} Verträge</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
     <div class="actions"><button type="button" class="btn danger" id="del">Alle Einträge löschen</button></div></div></details>`,
   s=>{s.querySelectorAll('details.acc[data-acc]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open){menuAcc=d.dataset.acc;
@@ -1269,6 +1351,7 @@ function openMenu(){
      const ghF=s.querySelector('#ghForce');if(ghF)ghF.onclick=async()=>{await ghSync(true);openMenu();if(!ghStat.err)celebrate('Gesichert')};
      const ghX=s.querySelector('#ghOff');if(ghX){let armed=false;ghX.onclick=()=>{if(!armed){armed=true;ghX.classList.add('danger','sure');ghX.textContent='Wirklich trennen?';return}
        const m=Object.assign({},db.meta);delete m.gh;db.meta=m;setGhStat({err:'',at:0,conflict:false});save();openMenu();toast('GitHub getrennt. Im Repo bleibt alles liegen.')}}
+     bindUpd(s);
      s.querySelector('#revM').onclick=()=>{closeSheet(false);openReview()};
      const rmOn=s.querySelector('#rmOn');if(rmOn)rmOn.onclick=async()=>{const m=s.querySelector('#rmMsg');rmOn.disabled=true;
        try{const bg=await remindOn();openMenu();celebrate('Erinnerungen an');toast(bg?'Erinnerungen sind an – auch bei geschlossener App.':'Erinnerungen sind an. Dein Browser prüft beim Öffnen der App.')}

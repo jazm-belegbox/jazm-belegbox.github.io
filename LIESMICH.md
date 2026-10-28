@@ -1,4 +1,4 @@
-# MyBelegBox – Test-App 0.8.3.10
+# MyBelegBox – Test-App 0.9.0.11
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
 
@@ -41,6 +41,14 @@ Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem P
 1. Ordnerinhalt auf einen beliebigen statischen Hoster mit HTTPS hochladen (ohne HTTPS funktionieren Verschlüsselung und Service Worker nicht).
 2. Am besten in einen eigenen Unterordner oder auf eine eigene Subdomain, nicht in denselben Ordner wie eine andere App.
 3. Auf dem Android-Handy in Chrome öffnen → Menü → „App installieren“ bzw. „Zum Startbildschirm“.
+
+## App-Update aus der App (ab 0.9)
+
+Daten → **App-Update**: einmal das App-Repo (`jazm-belegbox/jazm-belegbox.github.io`) und einen eigenen Fine-grained-Zugangsschlüssel eintragen – nur für dieses Repo, Rechte **Contents: Read and write** und **Actions: Read**. Danach „Update-Zip hochladen“ und das Paket wählen. Der Ablauf `.github/workflows/paket.yml` entpackt die Zip, prüft, dass `APP_VERSION` (app.js) und Cache-Nummer (sw.js) übereinstimmen und die Version nicht älter ist, übernimmt die Dateien, löscht die Zip und veröffentlicht. Die App zeigt den Fortschritt und meldet, sobald die neue Version online ist.
+
+Ohne App geht es auch: Zip auf GitHub über „Add file → Upload files“ ins Hauptverzeichnis laden.
+
+Ein Paket enthält nur die geänderten Dateien; was nicht in der Zip ist (z. B. `vendor/`), bleibt unverändert.
 
 ## Neue Version veröffentlichen
 
