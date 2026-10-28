@@ -4,10 +4,10 @@
 // Eigene Namen je Adresse: Live unter / wie bisher, eine Test-App unter /test/ mit Präfix „test-“
 const SCOPE_PATH = new URL(self.registration.scope).pathname;
 const NS = SCOPE_PATH === '/' ? '' : SCOPE_PATH.replace(/^\/|\/$/g, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-';
-const CACHE = NS + 'belegbox-0.8.1.8';
+const CACHE = NS + 'belegbox-0.8.2.9';
 const INBOX = NS + 'inbox-belegbox', SCHED = NS + 'sched-belegbox';
 const FILES = ['./', 'index.html', 'app.js', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/icon-180.png', 'icons/badge-96.png',
+  'icons/belegbox-192.png', 'icons/belegbox-512.png', 'icons/belegbox-maskable-512.png', 'icons/belegbox-maskable-192.png', 'icons/belegbox-180.png', 'icons/belegbox-badge-96.png',
   'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
 
 self.addEventListener('install', e => {
@@ -89,7 +89,7 @@ async function remind(force) {
     ? (LABEL[f.t] || 'eine Frist').replace(/^./, m => m.toUpperCase()) + ' ' + (VERB[f.t] || 'endet') + ' ' + when(f.n) + '.'
     : soon.length + ' Fristen in den nächsten 14 Tagen – die nächste ' + when(f.n) + '.';
   await self.registration.showNotification('Belegbox', {
-    body, tag: 'belegbox-fristen', renotify: false, icon: 'icons/icon-192.png', badge: 'icons/badge-96.png', data: { url: './' }
+    body, tag: 'belegbox-fristen', renotify: false, icon: 'icons/belegbox-192.png', badge: 'icons/belegbox-badge-96.png', data: { url: './' }
   });
   await c.put('./__last', new Response(JSON.stringify({ key })));
 }

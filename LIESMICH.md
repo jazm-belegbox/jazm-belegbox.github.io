@@ -1,4 +1,4 @@
-# Belegbox – Test-App 0.8.1.8
+# Belegbox – Test-App 0.8.2.9
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
 
@@ -34,7 +34,7 @@ Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem P
 | `sw.js` | Service Worker (offline nutzbar, Update-Hinweis) |
 | `manifest.webmanifest` | Name, Farben, Icons für „Zum Startbildschirm“ |
 | `vendor/pdfjs/` | pdf.js von Mozilla (Apache-2.0) zum Anzeigen von PDFs, unverändert, wird nur bei Bedarf geladen |
-| `icons/` | App-Icons, `badge-96.png` für spätere Push-Nachrichten |
+| `icons/` | App-Icons, `belegbox-badge-96.png` für spätere Push-Nachrichten |
 
 ## Online stellen
 

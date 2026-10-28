@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.8.1.8';
+const APP_VERSION='0.8.2.9';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -1274,7 +1274,7 @@ function openMenu(){
        try{const bg=await remindOn();openMenu();celebrate('Erinnerungen an');toast(bg?'Erinnerungen sind an – auch bei geschlossener App.':'Erinnerungen sind an. Dein Browser prüft beim Öffnen der App.')}
        catch(x){rmOn.disabled=false;m.textContent=x.message;m.style.color='var(--crit)';m.hidden=false}};
      const rmOff=s.querySelector('#rmOff');if(rmOff)rmOff.onclick=async()=>{await remindOff();openMenu();toast('Erinnerungen ausgeschaltet.')};
-     const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('Belegbox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/icon-192.png',badge:'icons/badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
+     const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('Belegbox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
