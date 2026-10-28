@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.8.2.9';
+const APP_VERSION='0.8.3.10';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -116,7 +116,7 @@ async function ghSync(force){
       const list=await ghFetch(g,'GET','/contents/files');const have=new Set((list||[]).map(x=>String(x.name).replace(/\.bin$/,'')));
       for(const id of ids){if(have.has(id))continue;const f=await fileGet(id).catch(()=>null);if(!f)continue;
         const u=new Uint8Array(12+f.ct.byteLength);u.set(new Uint8Array(f.iv),0);u.set(new Uint8Array(f.ct),12);
-        await ghFetch(g,'PUT',`/contents/files/${id}.bin`,{message:'Belegbox: Dokument',content:toB64(u)})}
+        await ghFetch(g,'PUT',`/contents/files/${id}.bin`,{message:'MyBelegBox: Dokument',content:toB64(u)})}
     }
     // 2) Tresor – aber nie einen fremden Tresor überschreiben
     for(let attempt=0;attempt<2;attempt++){
@@ -124,7 +124,7 @@ async function ghSync(force){
       if(json===local)break;
       if(cur&&!force){let rv=null;try{rv=JSON.parse(json)}catch(e){}
         if(!rv||(rv.vid!==lv.vid)){const e=new Error('conflict');e.conflict=true;throw e}}
-      try{await ghFetch(g,'PUT','/contents/vault.json',{message:'Belegbox-Sicherung '+new Date().toLocaleString('de-DE'),content:toB64(te.encode(local)),sha:cur?cur.sha:undefined});break}
+      try{await ghFetch(g,'PUT','/contents/vault.json',{message:'MyBelegBox-Sicherung '+new Date().toLocaleString('de-DE'),content:toB64(te.encode(local)),sha:cur?cur.sha:undefined});break}
       catch(e){if(e.status!==409||attempt)throw e}
     }
     setGhStat({at:Date.now(),err:'',conflict:false});
@@ -141,7 +141,7 @@ async function ghSync(force){
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&ghTimer&&ghPending)ghSync()});
 /* Wiederherstellen aus GitHub (ohne entsperrten Tresor) */
 async function ghRestore(g,onStep){
-  const {json}=await ghRemoteVault(g);if(!json||!vaultOk(json))throw new Error('Im Repo wurde keine Belegbox-Sicherung gefunden.');
+  const {json}=await ghRemoteVault(g);if(!json||!vaultOk(json))throw new Error('Im Repo wurde keine MyBelegBox-Sicherung gefunden.');
   const files={},list=await ghFetch(g,'GET','/contents/files')||[];let n=0;
   for(const it of list){if(!/\.bin$/.test(it.name))continue;onStep&&onStep(++n,list.length);
     const b=new Uint8Array(await ghFetch(g,'GET','/contents/files/'+encodeURIComponent(it.name),null,true));
@@ -221,12 +221,12 @@ async function enableBio(){
   if(!bioPossible())throw new Error('Dieser Browser unterstützt kein Entsperren per Fingerabdruck.');
   const prfSalt=rnd(32);
   const cred=await navigator.credentials.create({publicKey:{
-    rp:{name:'Belegbox',id:location.hostname},user:{id:rnd(16),name:'Belegbox',displayName:'Belegbox'},challenge:rnd(32),
+    rp:{name:'MyBelegBox',id:location.hostname},user:{id:rnd(16),name:'MyBelegBox',displayName:'MyBelegBox'},challenge:rnd(32),
     pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],timeout:60000,attestation:'none',
     authenticatorSelection:{authenticatorAttachment:'platform',residentKey:'preferred',userVerification:'required'},
     extensions:{prf:{eval:{first:prfSalt}}}}});
   const ext=cred.getClientExtensionResults?cred.getClientExtensionResults():{};
-  const NOPRF='Dein Passwortmanager unterstützt das Entsperren per Fingerabdruck nicht (häufig bei Samsung Pass). Stell als Passkey-Anbieter den Google Passwortmanager ein und versuch es erneut. Den eben angelegten Passkey „Belegbox“ kannst du löschen.';
+  const NOPRF='Dein Passwortmanager unterstützt das Entsperren per Fingerabdruck nicht (häufig bei Samsung Pass). Stell als Passkey-Anbieter den Google Passwortmanager ein und versuch es erneut. Den eben angelegten Passkey „MyBelegBox“ kannst du löschen.';
   if(ext.prf&&ext.prf.enabled===false)throw new Error(NOPRF);
   const credId=new Uint8Array(cred.rawId);
   let out=await prfFrom(cred);
@@ -319,7 +319,7 @@ function showLock(closing){
       ${bootInfo.orphans?`<div class="note" style="background:var(--crit-soft)"><b>Achtung:</b> Auf diesem Gerät liegen noch ${bootInfo.orphans>1?bootInfo.orphans+' verschlüsselte Dokumente':'ein verschlüsseltes Dokument'}, aber kein Tresor. Hast du eine Sicherung, stell sie unten wieder her, statt neu anzufangen.</div>`:''}
       ${bootInfo.broken||bootInfo.orphans?'<label class="check"><input id="lnew" type="checkbox"> Ich möchte trotzdem einen neuen, leeren Tresor anlegen</label>':''}
       <div class="note">Es gibt keine Wiederherstellung. Wer das Passwort vergisst, verliert die Daten. Notier es dir an einem sicheren Ort, z. B. im Passwortmanager.</div>`
-    :`<h2>Belegbox ist gesperrt</h2><p>${bio?'Entsperre mit deinem Fingerabdruck oder deinem Passwort.':'Gib dein Passwort ein, um deine Daten zu entschlüsseln.'}</p>
+    :`<h2>MyBelegBox ist gesperrt</h2><p>${bio?'Entsperre mit deinem Fingerabdruck oder deinem Passwort.':'Gib dein Passwort ein, um deine Daten zu entschlüsseln.'}</p>
       ${bio?`<button type="button" class="btn primary bio" id="lbio">${FINGER}Mit Fingerabdruck entsperren</button><div class="or"><span>oder mit Passwort</span></div>`:''}
       <label class="field"><span>Passwort</span><input id="lp1" type="password" autocomplete="current-password"></label>`}
     <p class="hint" id="lerr" style="color:var(--crit)" hidden></p>
@@ -532,9 +532,9 @@ async function exportBackup(){
 function readBackupFile(file){return new Promise((res,rej)=>{const r=new FileReader();
   r.onload=()=>{try{const o=JSON.parse(r.result);const v=o&&o.app==='belegbox'&&o.vault;
       if(!v||typeof v.salt!=='string'||typeof v.iv!=='string'||typeof v.ct!=='string')throw new Error('format');res({vault:v,files:o.files&&typeof o.files==='object'?o.files:{}})}
-    catch(e){rej(new Error('Das ist keine gültige Belegbox-Sicherung.'))}};
+    catch(e){rej(new Error('Das ist keine gültige MyBelegBox-Sicherung.'))}};
   r.onerror=()=>rej(new Error('Die Datei konnte nicht gelesen werden.'));
-  if(file.size>400e6)return rej(new Error('Die Datei ist zu groß für eine Belegbox-Sicherung.'));
+  if(file.size>400e6)return rej(new Error('Die Datei ist zu groß für eine MyBelegBox-Sicherung.'));
   r.readAsText(file)})}
 async function restoreVault(o){let fileErr=false;
   try{await fileClear();for(const [id,f] of Object.entries(o.files||{}))await filePut(id,{iv:fromB64(f.iv),ct:fromB64(f.ct).buffer})}catch(x){fileErr=true}
@@ -550,13 +550,13 @@ function buildIcs(neutral){
   const stamp=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d+Z$/,'Z');
   const ev=[];
   db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const i=contractInfo(c);if(!i.by)return;
-    ev.push({uid:c.id+'-frist',date:i.by,title:neutral?'Belegbox: Kündigungsfrist':'Kündigungsfrist: '+c.anbieter,
-      desc:neutral?'Details in der Belegbox.':`Spätestens heute kündigen, sonst verlängert sich ${c.anbieter} am ${fmtD(i.end)}.`})});
+    ev.push({uid:c.id+'-frist',date:i.by,title:neutral?'MyBelegBox: Kündigungsfrist':'Kündigungsfrist: '+c.anbieter,
+      desc:neutral?'Details in der MyBelegBox.':`Spätestens heute kündigen, sonst verlängert sich ${c.anbieter} am ${fmtD(i.end)}.`})});
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['gew','Gewährleistung',i.gew],['gar','Herstellergarantie',i.gar]].forEach(([k,t,dt])=>{if(!dt||days(dt)<0)return;
-      ev.push({uid:d.id+'-'+k,date:dt,title:neutral?'Belegbox: '+t+' endet':t+' endet: '+d.name,
-        desc:neutral?'Details in der Belegbox.':`${t} für ${d.name} läuft heute ab. Mängel vorher melden.`})})});
-  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Belegbox//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:Belegbox-Fristen'];
+      ev.push({uid:d.id+'-'+k,date:dt,title:neutral?'MyBelegBox: '+t+' endet':t+' endet: '+d.name,
+        desc:neutral?'Details in der MyBelegBox.':`${t} für ${d.name} läuft heute ab. Mängel vorher melden.`})})});
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MyBelegBox//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:MyBelegBox-Fristen'];
   ev.forEach(e=>{L.push('BEGIN:VEVENT','UID:'+e.uid+'@belegbox','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+icsDay(e.date),
     'DTEND;VALUE=DATE:'+icsDay(addDays(e.date,1)),'SUMMARY:'+icsEsc(e.title),'DESCRIPTION:'+icsEsc(e.desc),'TRANSP:TRANSPARENT',
     'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc(e.title),'TRIGGER:-P7D','END:VALARM',
@@ -742,7 +742,7 @@ function viewHome(){
         <button type="button" class="fact${ohne?' warn':''}" data-goto="geraete"><b class="num" data-count="ohne" data-v="${ohne}">${ohne}</b><span>ohne Beleg</span></button>
       </div>
     </div>
-    ${reviewSeason()?`<button type="button" class="revbanner" id="revGo"><span class="label">Jahresrückblick</span><b>Dein Belegbox-Jahr ${reviewYear()} ist da</b><span>Ansehen →</span></button>`:''}
+    ${reviewSeason()?`<button type="button" class="revbanner" id="revGo"><span class="label">Jahresrückblick</span><b>Dein MyBelegBox-Jahr ${reviewYear()} ist da</b><span>Ansehen →</span></button>`:''}
     ${checkCard()}
     <div class="sechead"><h2>Demnächst fällig</h2><span class="label">nächste 90 Tage</span></div>
     <div class="list">${ev.length?ev.map(e=>`<button type="button" class="row" data-kind="${e.kind}" data-open="${e.id}">
@@ -1086,7 +1086,7 @@ function openForm(kind,item,camera,tpl){
       const commitDocs=async()=>{if(D.busy()){err.textContent='Eine Datei wird noch gelesen. Einen Moment …';err.hidden=false;return false}
         try{await D.commit();return true}catch(x){err.textContent='Die Datei konnte nicht gespeichert werden. Vermutlich ist der Speicher voll.';err.hidden=false;return false}};
       if([...s.querySelectorAll('input:not([type])')].some(i=>looksBanky(i.value))||textBanky(s.querySelector('#x_note').value)){
-        err.textContent='Ein Feld sieht nach einer IBAN oder Kartennummer aus. Solche Nummern speichert die Belegbox bewusst nicht. Trag höchstens die letzten vier Ziffern ein.';err.hidden=false;return}
+        err.textContent='Ein Feld sieht nach einer IBAN oder Kartennummer aus. Solche Nummern speichert die MyBelegBox bewusst nicht. Trag höchstens die letzten vier Ziffern ein.';err.hidden=false;return}
       if(kind==='d'){
         if(!v('f_name')||!v('f_kauf')){err.textContent='Bitte Bezeichnung und Kaufdatum ausfüllen.';err.hidden=false;return}
         let foto=item&&item.foto||'';const f=s.querySelector('#f_foto').files[0];
@@ -1194,7 +1194,7 @@ function openMenu(){
       <div class="actions"><button type="submit" class="btn" id="pwgo">Passwort ändern</button></div>
     </form>
     ${bioPossible()?`<div class="label" style="margin-bottom:8px">Fingerabdruck</div>
-    <p class="hint" style="margin-bottom:10px">${vmeta&&vmeta.bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die Belegbox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „Belegbox“ in deinem Passwortmanager angelegt.'}</p>
+    <p class="hint" style="margin-bottom:10px">${vmeta&&vmeta.bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die MyBelegBox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „MyBelegBox“ in deinem Passwortmanager angelegt.'}</p>
     <div class="actions" style="margin-bottom:6px"><button type="button" class="btn${vmeta&&vmeta.bio?'':' primary'}" id="bioBtn">${vmeta&&vmeta.bio?'Ausschalten':'Einschalten'}</button></div>
     <p class="hint" id="bioMsg" hidden></p><div style="height:12px"></div>`:''}
 </div></details><details class="acc" data-acc="gh"${menuAcc==='gh'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></span><span class="at"><b>Sicherung</b><small>${ghCfg()?(ghStat.err?'GitHub: Problem – bitte ansehen':'GitHub '+(ghStat.at?'✓ '+relTime(ghStat.at):'verbunden')):'GitHub aus'}${db.meta&&db.meta.lastBackup?' · Datei '+fmtD(parse(db.meta.lastBackup)):' · keine Datei'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
@@ -1219,9 +1219,9 @@ function openMenu(){
       <div class="actions"><button type="button" class="btn danger sure" id="bkYes">Ersetzen</button><button type="button" class="btn" id="bkNo">Abbrechen</button></div></div>
     <p class="hint" style="margin:6px 0 18px">${persisted===true?'Dauerhafter Speicher ist aktiv.':persisted===false?'Der Browser hat dauerhaften Speicher nicht zugesagt. Installiere die App auf dem Startbildschirm und sichere regelmäßig.':''}</p>
 </div></details><details class="acc" data-acc="erin"${menuAcc==='erin'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/></svg></span><span class="at"><b>Erinnerungen</b><small>${db.meta&&db.meta.remind?'an':'aus'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    ${'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="hint" style="margin-bottom:10px">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die Belegbox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
+    ${'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="hint" style="margin-bottom:10px">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die MyBelegBox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
       <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="btn" id="rmOff">Ausschalten</button></div>`
-    :`<p class="hint" style="margin-bottom:10px">Die Belegbox meldet sich, wenn in den nächsten 14 Tagen eine Kündigungsfrist oder Garantie abläuft – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
+    :`<p class="hint" style="margin-bottom:10px">Die MyBelegBox meldet sich, wenn in den nächsten 14 Tagen eine Kündigungsfrist oder Garantie abläuft – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
       <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="rmOn">Einschalten</button></div><p class="hint" id="rmMsg" hidden></p><div style="height:12px"></div>`):''}
 </div></details>
     <button type="button" class="accrow" id="revM"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.2l5.9-.9z"/></svg></span><span class="at"><b>Jahresrückblick ${reviewYear()}</b><small>${T0.getMonth()<11&&reviewYear()===T0.getFullYear()?'bis heute ansehen':'ansehen'}</small></span><svg class="chev r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
@@ -1244,9 +1244,9 @@ function openMenu(){
        closeSheet();celebrate('Neu verschlüsselt');toast('Passwort geändert. Deine Daten sind neu verschlüsselt.')});
      const bb=s.querySelector('#bioBtn');
      if(bb)bb.onclick=async()=>{const m=s.querySelector('#bioMsg');m.hidden=true;bb.disabled=true;
-       try{ if(vmeta.bio){await disableBio();closeSheet();toast('Fingerabdruck ausgeschaltet. Den Passkey „Belegbox“ kannst du im Passwortmanager löschen.')}
+       try{ if(vmeta.bio){await disableBio();closeSheet();toast('Fingerabdruck ausgeschaltet. Den Passkey „MyBelegBox“ kannst du im Passwortmanager löschen.')}
             else{await enableBio();closeSheet();celebrate('Fingerabdruck an');toast('Fingerabdruck eingeschaltet. Probier es gleich mit „Sperren“ aus.')} }
-       catch(x){bb.disabled=false;m.textContent=x&&x.name==='NotAllowedError'?'Abgebrochen.':(x&&x.name==='InvalidStateError'?'Für dieses Gerät gibt es schon einen Belegbox-Passkey. Lösche ihn im Passwortmanager und versuch es erneut.':(x&&x.message)||'Das hat nicht geklappt.');
+       catch(x){bb.disabled=false;m.textContent=x&&x.name==='NotAllowedError'?'Abgebrochen.':(x&&x.name==='InvalidStateError'?'Für dieses Gerät gibt es schon einen MyBelegBox-Passkey. Lösche ihn im Passwortmanager und versuch es erneut.':(x&&x.message)||'Das hat nicht geklappt.');
          m.style.color='var(--crit)';m.hidden=false}};
      const ghGo=s.querySelector('#gh_go');
      if(ghGo)ghGo.onclick=async()=>{const m=s.querySelector('#gh_msg');
@@ -1256,7 +1256,7 @@ function openMenu(){
        ghGo.disabled=true;say('Prüfe Zugang …');
        try{const info=await ghFetch(g,'GET','');
          if(!info)throw Object.assign(new Error(),{status:404});
-         if(!info.private){ghGo.disabled=false;return say('Dieses Repo ist öffentlich. Aus Sicherheitsgründen sichert die Belegbox nur in private Repos.',true)}
+         if(!info.private){ghGo.disabled=false;return say('Dieses Repo ist öffentlich. Aus Sicherheitsgründen sichert die MyBelegBox nur in private Repos.',true)}
          if(info.permissions&&info.permissions.push===false){ghGo.disabled=false;return say('Der Schlüssel darf in dieses Repo nicht schreiben. Setze „Contents“ auf „Read and write“.',true)}
        }catch(x){ghGo.disabled=false;return say(ghErrText(x),true)}
        db.meta=Object.assign({},db.meta,{gh:g});setGhStat({err:'',at:0,conflict:false});await save();
@@ -1274,7 +1274,7 @@ function openMenu(){
        try{const bg=await remindOn();openMenu();celebrate('Erinnerungen an');toast(bg?'Erinnerungen sind an – auch bei geschlossener App.':'Erinnerungen sind an. Dein Browser prüft beim Öffnen der App.')}
        catch(x){rmOn.disabled=false;m.textContent=x.message;m.style.color='var(--crit)';m.hidden=false}};
      const rmOff=s.querySelector('#rmOff');if(rmOff)rmOff.onclick=async()=>{await remindOff();openMenu();toast('Erinnerungen ausgeschaltet.')};
-     const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('Belegbox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
+     const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('MyBelegBox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
@@ -1326,7 +1326,7 @@ async function remindPing(force){
 async function remindOn(){
   if(!('Notification' in window)||!('serviceWorker' in navigator))throw new Error('Dieser Browser kann keine Benachrichtigungen anzeigen.');
   const p=await Notification.requestPermission();
-  if(p!=='granted')throw new Error('Benachrichtigungen sind für die Belegbox blockiert. Erlaube sie in den Android-Einstellungen unter Apps → Chrome bzw. Belegbox → Benachrichtigungen.');
+  if(p!=='granted')throw new Error('Benachrichtigungen sind für die MyBelegBox blockiert. Erlaube sie in den Android-Einstellungen unter Apps → Chrome bzw. MyBelegBox → Benachrichtigungen.');
   const reg=await navigator.serviceWorker.ready;let bg=false;
   try{if(reg.periodicSync){await reg.periodicSync.register('belegbox-fristen',{minInterval:12*3600e3});bg=true}}catch(e){bg=false}
   db.meta=Object.assign({},db.meta,{remind:true,remindBg:bg});await save();schedLast='';await remindPing(true);return bg;
@@ -1465,7 +1465,7 @@ async function openScanner(onPick){
           msg.textContent=seen.size>1?'Mehrere Codes gefunden – tippe die Seriennummer an.':'Gefunden. Tippe zum Übernehmen – oder warte auf weitere Codes.'})}}catch(e){}
       timer=setTimeout(tick,250)};
     tick();
-  }catch(e){msg.textContent=e&&e.name==='NotAllowedError'?'Die Kamera ist blockiert. Erlaube den Kamerazugriff für die Belegbox und versuch es erneut.':'Die Kamera konnte nicht gestartet werden.';msg.classList.add('err')}
+  }catch(e){msg.textContent=e&&e.name==='NotAllowedError'?'Die Kamera ist blockiert. Erlaube den Kamerazugriff für die MyBelegBox und versuch es erneut.':'Die Kamera konnte nicht gestartet werden.';msg.classList.add('err')}
 }
 
 /* ---------- Suche über alles ---------- */
@@ -1531,7 +1531,7 @@ function reviewStats(Y){
 function openReview(){
   const Y=reviewYear(),st=reviewStats(Y),bisher=T0.getMonth()<11&&Y===T0.getFullYear();
   const S=[];
-  S.push({k:'Belegbox',big:String(Y),sub:bisher?'Dein Jahr bis heute – tipp dich durch.':'Dein Jahr in Zahlen – tipp dich durch.',bg:'g1'});
+  S.push({k:'MyBelegBox',big:String(Y),sub:bisher?'Dein Jahr bis heute – tipp dich durch.':'Dein Jahr in Zahlen – tipp dich durch.',bg:'g1'});
   S.push({k:'Deine Fixkosten',big:eur(st.mon*12),sub:`im Jahr für ${st.nAct} Verträge${st.mon?` – das sind ${dayTxt(st.mon*12/365)} an jedem einzelnen Tag.`:'.'}`,bg:'g2'});
   if(st.top)S.push({k:'Dein teuerstes Abo',big:esc(st.top.anbieter),sub:`${eur(monthly(st.top))} im Monat · ${eur(monthly(st.top)*12)} im Jahr`,bg:'g3'});
   if(st.kat)S.push({k:'Hier geht das meiste Geld hin',big:esc(st.kat[0]),sub:`${eur(st.kat[1])} im Monat`,bg:'g4'});
@@ -1789,7 +1789,7 @@ function tstep(){traf=0;
 }
 
 document.getElementById('menuBtn').onclick=()=>{setFan(false);openMenu()};
-if(IS_TEST){document.title='Belegbox TEST';const h=document.querySelector('.brand h1');if(h)h.insertAdjacentHTML('beforeend',' <span class="testtag">TEST</span>')}
+if(IS_TEST){document.title='MyBelegBox TEST';const h=document.querySelector('.brand h1');if(h)h.insertAdjacentHTML('beforeend',' <span class="testtag">TEST</span>')}
 document.getElementById('searchBtn').onclick=()=>{if(!db)return;setFan(false);openSearch()};
 document.getElementById('lockBtn').onclick=()=>lock(true);
 boot();
@@ -1801,7 +1801,7 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading||!hadController)return;reloading=true;location.reload()});
   navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{swReg=reg;
     const offer=w=>{const r=document.getElementById('updRoot');
-      r.innerHTML='<div class="upd" role="status"><span>Neue Version der Belegbox verfügbar</span><button type="button" id="updGo">Aktualisieren</button><button type="button" id="updX" aria-label="Später">✕</button></div>';
+      r.innerHTML='<div class="upd" role="status"><span>Neue Version der MyBelegBox verfügbar</span><button type="button" id="updGo">Aktualisieren</button><button type="button" id="updX" aria-label="Später">✕</button></div>';
       document.getElementById('updGo').onclick=()=>saving.then(()=>w.postMessage('SKIP_WAITING'));
       document.getElementById('updX').onclick=()=>{r.innerHTML=''}};
     if(reg.waiting&&navigator.serviceWorker.controller)offer(reg.waiting);
