@@ -531,7 +531,7 @@ html.tilt .p-ok{background-image:linear-gradient(100deg,transparent 35%,var(--sh
 .updstat a{color:var(--accent);font-weight:700}
 
 /* ds:start */
-:root{--ds-ink:var(--ink);--ds-muted:var(--muted);--ds-line:var(--line);--ds-surface:var(--surface);--ds-sunk:var(--sunk);--ds-accent:var(--accent);--ds-accent-ink:var(--accent-ink);--ds-soft:var(--accent-soft);--ds-crit:var(--crit);--ds-crit-soft:var(--crit-soft);--ds-warn-soft:var(--warn-soft);--ds-ok:var(--ok)}
+:root{--ds-ink:var(--ink);--ds-muted:var(--muted);--ds-line:var(--line);--ds-surface:var(--surface);--ds-sunk:var(--sunk);--ds-accent:var(--accent);--ds-accent-ink:var(--accent-ink);--ds-soft:var(--accent-soft);--ds-crit:var(--crit);--ds-crit-soft:var(--crit-soft);--ds-warn-soft:var(--warn-soft);--ds-ok:var(--ok);--ds-warn:var(--warn)}
 /* ===== Gemeinsamer Baustein „Daten & Sicherheit“ – identisch in MySmartBox, MyGesundBox, MyBelegBox =====
    Nur die Farbzuordnung (--ds-*) oben unterscheidet sich je App. */
 .ds-lbl{display:block;font-size:12px;line-height:1.3;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--ds-muted);margin:14px 0 8px}
@@ -567,6 +567,37 @@ html.tilt .p-ok{background-image:linear-gradient(100deg,transparent 35%,var(--sh
 .ds-updbar span{flex:1;min-width:0}
 .ds-updbar .ds-btn{min-height:36px;padding:0 12px;font-size:14px}
 .ds-x{all:unset;box-sizing:border-box;cursor:pointer;width:34px;height:34px;flex:none;display:grid;place-items:center;color:var(--ds-muted);border-radius:8px;font-size:16px}
+/* Untertitel der Bereiche nie abschneiden, sondern umbrechen */
+.ds-sheet-sub-wrap{}
+.acc .at small,.accrow .at small,#bxsbody .acchd .at small{white-space:normal!important;overflow:visible!important;text-overflow:clip!important}
+/* Erinnerung an die Datensicherung oben in der Übersicht */
+.ds-remind{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;margin:0 0 14px;border-radius:16px;background:var(--ds-warn-soft);color:var(--ds-ink);cursor:pointer;text-align:left;font-family:inherit}
+.ds-remind.crit{background:var(--ds-crit-soft)}
+.ds-remind:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.ds-remind-i{width:36px;height:36px;flex:none;border-radius:10px;display:grid;place-items:center;background:var(--ds-surface);color:var(--ds-warn)}
+.ds-remind.crit .ds-remind-i{color:var(--ds-crit)}
+.ds-remind-i svg{width:20px;height:20px}
+.ds-remind-t{flex:1;min-width:0;display:grid;gap:2px}
+.ds-remind-t b{font-size:15px;font-weight:700;line-height:1.3}
+.ds-remind-t small{font-size:13px;line-height:1.4;color:var(--ds-muted)}
+.ds-remind-go{flex:none;font-size:14px;font-weight:700;color:var(--ds-surface);background:var(--ds-warn);border-radius:10px;padding:8px 12px}
+.ds-remind.crit .ds-remind-go{background:var(--ds-crit)}
+/* Suche als Blatt von unten – gleich in allen Apps */
+.ds-srch{display:block;margin:0}
+.ds-srch input{width:100%;box-sizing:border-box;margin:0;padding:12px 14px;border:1px solid var(--ds-line);border-radius:12px;background:var(--ds-sunk);color:var(--ds-ink);font:inherit;font-size:17px}
+.ds-qres{display:grid;gap:10px;margin-top:12px}
+.ds-qres .ds-lbl{margin:6px 0 0}
+.ds-qhint{font-size:14px;line-height:1.45;color:var(--ds-muted);padding:8px 2px;margin:0}
+.ds-qlist{display:flex;flex-direction:column;background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:14px;overflow:hidden}
+.ds-qrow{all:unset;box-sizing:border-box;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:12px;padding:12px 14px;cursor:pointer;color:var(--ds-ink);font-family:inherit;text-align:left}
+.ds-qrow+.ds-qrow{border-top:1px solid var(--ds-line)}
+.ds-qrow:focus-visible{outline:2px solid var(--ds-accent);outline-offset:-2px}
+.ds-qrow .ds-qi{width:40px;height:40px;border-radius:10px;background:var(--ds-soft);color:var(--ds-accent);display:grid;place-items:center}
+.ds-qrow .ds-qi svg{width:20px;height:20px}
+.ds-qrow .ds-qt{min-width:0;display:grid;gap:2px}
+.ds-qrow .ds-qt b{font-size:16px;font-weight:700;overflow-wrap:anywhere}
+.ds-qrow .ds-qt small{font-size:13px;color:var(--ds-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ds-srch .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 /* App-spezifisch: Kopfzeile der Bereiche wie in den anderen Apps */
 .acc .at b,.accrow .at b{font-weight:800;font-size:16px}
@@ -599,6 +630,23 @@ html.tilt .p-ok{background-image:linear-gradient(100deg,transparent 35%,var(--sh
 
 /* Meldungen unten: gleich in allen Apps */
 .toast{position:fixed!important;left:50%!important;right:auto!important;top:auto!important;transform:translateX(-50%)!important;bottom:calc(150px + env(safe-area-inset-bottom,0px))!important;z-index:130!important;background:var(--ds-ink)!important;color:var(--ds-surface)!important;padding:10px 16px!important;border-radius:12px!important;font-size:14px!important;line-height:1.4!important;font-weight:500!important;width:max-content!important;max-width:min(calc(100vw - 32px),440px)!important;box-sizing:border-box!important;text-align:center!important;box-shadow:0 6px 20px rgba(0,0,0,.18)!important}
+
+/* Kopfzeile: gleich in allen Apps, App-Name passt auch auf schmale Handys */
+header.top{padding-block:14px 8px}
+header.top .brand{flex:1;min-width:0}
+header.top .brand .mark{flex:none}
+header.top .brand h1{font-size:clamp(16px,5.2vw,24px)!important;font-weight:800!important;letter-spacing:-.02em!important;line-height:1.2!important;margin:0!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;min-width:0!important}
+header.top>div:last-child{flex:none;gap:6px!important}
+@media (max-width:359px){header.top>div:last-child{gap:4px!important}header.top .icobtn{width:36px;height:36px}header.top .brand{gap:8px}header.top .brand .mark,header.top .brand .mark img{width:30px;height:30px}header.top .brand h1{font-size:17px!important}}
+/* Neu-Knopf: gleiche Größe und Lage wie in den anderen Apps */
+.fab{height:54px;min-width:54px}
+.fab:not(.open):not(.shrunk){border-radius:18px}
+.fab{bottom:calc(80px + env(safe-area-inset-bottom,0px))}
+/* Formular-Knöpfe: Abbrechen links von Speichern, rechtsbündig – wie MySmartBox / MyGesundBox */
+.sheet form>.actions:last-child{justify-content:flex-end}
+.sheet form>.actions:last-child .btn{min-height:42px;padding:0 16px;font-size:15px;font-weight:600;border-radius:12px}
+.sheethead h2{font-size:22px;font-weight:800;line-height:1.2}
+.field>span{font-size:13px;font-weight:700}
 
 /* ds:end */
 </style>

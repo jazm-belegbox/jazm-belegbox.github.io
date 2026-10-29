@@ -1,6 +1,15 @@
-# MyBelegBox – Test-App 0.9.3.0
+# MyBelegBox – Test-App 0.9.5.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.9.5
+
+- Suche, Formulare und Rückfragen sehen jetzt in allen drei Boxen gleich aus: Suche als Blatt von unten, Formular-Knöpfe „Abbrechen“ und „Speichern“ rechts, Löschen und neue Version mit Rückfrage statt zweimal tippen bzw. nur Hinweis.
+
+## Neu in 0.9.4
+
+- Erinnerung an die Datensicherung als Karte oben in der Übersicht (wie in MySmartBox und MyGesundBox) statt Banner auf allen Seiten. Antippen öffnet „Datensicherung“.
+- Kopfzeile und Neu-Knopf in gleicher Größe wie in den anderen Boxen; der App-Name passt auch auf schmale Handys.
 
 ## Neu in 0.9.3
 

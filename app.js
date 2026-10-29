@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.9.3.0';
+const APP_VERSION='0.9.5.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -348,7 +348,7 @@ function showLock(closing){
     if(setup){const p2=L.querySelector('#lp2').value,ln=L.querySelector('#lnew');
       if(ln&&!ln.checked)return fail('Bitte zuerst eine Sicherung wiederherstellen – oder bestätigen, dass du neu anfangen möchtest.');
       if(p1.length<10)return fail('Das Passwort braucht mindestens 10 Zeichen.');
-      if(p1!==p2)return fail('Die beiden Passwörter stimmen nicht überein.');}
+      if(p1!==p2)return fail('Die Passwörter stimmen nicht überein.');}
     go.disabled=true;go.textContent=setup?'Wird verschlüsselt …':'Wird entschlüsselt …';V.classList.add('busy');
     try{ setup?await createVault(p1):await unlock(p1) }
     catch(x){return fail(setup?'Der Tresor konnte nicht angelegt werden. Prüfe, ob der Browser Speicher erlaubt.':'Das Passwort ist falsch.')}
@@ -684,6 +684,19 @@ function devThumb(d){const ds=(d.docs||[]).filter(x=>x.thumb);
   return ds[0]?{src:ds[0].thumb,top:true}:null}
 function tileFor(d){const t=devThumb(d);
   return t?`<div class="tile"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></div>`:`<div class="tile ic">${catIcon(d.kategorie)}</div>`}
+/* Erinnerung an die Datensicherung – gleich in MySmartBox, MyGesundBox und MyBelegBox */
+const DS_ICO_DOWN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>';
+const DS_ICO_WARN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+function dsRemindHtml(o,attr){
+  const e=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const card=(cls,ico,t,s,go)=>`<button type="button" class="ds-remind${cls}" ${attr}><span class="ds-remind-i">${ico}</span><span class="ds-remind-t"><b>${e(t)}</b><small>${e(s)}</small></span><span class="ds-remind-go">${go}</span></button>`;
+  if(o.ghErr)return card(' crit',DS_ICO_WARN,'GitHub-Sicherung: Problem',o.ghErr,'Ansehen');
+  if(!o.own||o.ghOk)return '';
+  const d=o.days,dirty=o.dirty||0;
+  if(d!=null&&d<=14&&dirty<5)return '';
+  return card('',DS_ICO_DOWN,d==null?'Noch keine Datensicherung':dirty>=5?dirty+' Änderungen seit der letzten Datensicherung':'Letzte Datensicherung vor '+d+' Tagen',
+    'Ohne Sicherung sind bei Handyverlust oder gelöschten Browserdaten alle Daten weg.','Sichern');
+}
 function render(mode){
   if(!db)return;
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
@@ -694,14 +707,10 @@ function render(mode){
   const lb=db.meta&&db.meta.lastBackup?parse(db.meta.lastBackup):null;
   const dirty=db.meta&&db.meta.dirty||0;
   const ghOn=!!ghCfg(),ghOk=ghOn&&!ghStat.err&&ghStat.at;
-  if(ghOn&&ghStat.err){document.getElementById('banner').insertAdjacentHTML('beforeend',`<div class="banner" style="background:var(--crit-soft)"><span><b>GitHub-Sicherung:</b> ${esc(ghStat.err)}</span><button type="button" id="ghFix" style="color:var(--crit)">Ansehen</button></div>`);
-    document.getElementById('ghFix').onclick=openMenu}
-  if(own&&!ghOk&&(!lb||days(lb)<-14||dirty>=5)){
-    document.getElementById('banner').insertAdjacentHTML('beforeend',`<div class="banner" style="background:var(--warn-soft)"><span>${!lb?'Du hast noch keine Sicherung.':dirty>=5?dirty+' Änderungen seit der letzten Sicherung.':'Letzte Sicherung vor '+(-days(lb))+' Tagen.'} Ohne Sicherung sind bei Handyverlust, Browserwechsel oder gelöschten Websitedaten alle Daten weg.</span><button type="button" id="bkNow" style="color:var(--warn)">Jetzt sichern</button></div>`);
-    document.getElementById('bkNow').onclick=exportBackup;
-  }
+  const remind=dsRemindHtml({ghErr:ghOn?(ghStat.err||''):'',ghOk:!!ghOk,own,days:lb?-days(lb):null,dirty},'id="dsRemind"');
   const ce=document.getElementById('clearEx'); if(ce) ce.onclick=()=>{db.devices=db.devices.filter(x=>!x.ex);db.contracts=db.contracts.filter(x=>!x.ex);save();buzz(10);render('rows')};
-  main.innerHTML= tab==='home'?viewHome(): tab==='geraete'?viewDevices(): viewContracts();
+  main.innerHTML= tab==='home'?remind+viewHome(): tab==='geraete'?viewDevices(): viewContracts();
+  const rmd=document.getElementById('dsRemind');if(rmd)rmd.onclick=()=>{menuAcc='gh';openMenu()};
   main.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>openDetail(el.dataset.kind,el.dataset.open,el));
   main.querySelectorAll('[data-filter]').forEach(el=>el.onclick=()=>{if(filter===el.dataset.filter)return;filter=el.dataset.filter;buzz(5);render('rows')});
   main.querySelectorAll('[data-goto]').forEach(el=>el.onclick=()=>goTab(el.dataset.goto));
@@ -977,8 +986,9 @@ function openDetail(kind,id,from){
           armDelete(s,()=>{(c.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.contracts=db.contracts.filter(x=>x.id!==id)})},from);
   }
 }
-function armDelete(s,fn){const b=s.querySelector('#del');let armed=false;
-  b.onclick=()=>{if(!armed){armed=true;buzz(10);b.classList.add('sure');b.textContent='Wirklich löschen?';setTimeout(()=>{if(b.isConnected){armed=false;b.classList.remove('sure');b.textContent='Löschen'}},4000);return}
+function armDelete(s,fn){const b=s.querySelector('#del');
+  /* Rückfrage wie in MySmartBox und MyGesundBox */
+  b.onclick=()=>{if(!confirm(b.id==='del'&&b.textContent.includes('Alle')?'Wirklich alle Einträge löschen? Das lässt sich nicht rückgängig machen.':'Wirklich löschen?'))return;
     buzz([10,40,30]);fn();if(db)db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});save();closeSheet();render('rows')}}
 
 /* Logo: quadratisch, max. 160 px, Transparenz bleibt erhalten */
@@ -1060,7 +1070,7 @@ function openForm(kind,item,camera,tpl){
     ${tpl&&tpl._ext?`<p class="hint" style="margin-bottom:12px">Übernommen aus der <b>${esc(tpl._ext.src||'MyGesundBox')}</b>. Prüf die Angaben und füg den Kaufbeleg als Foto oder PDF hinzu.</p>`:''}${tpl&&!tpl._ext?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
     <div class="seg"${item||tpl?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
     ${kind==='d'?dev:con}<p class="hint" id="err" style="color:var(--crit)" hidden></p>
-    <div class="actions"><button type="submit" class="btn primary">Speichern</button><button type="button" class="btn" data-close>Abbrechen</button></div></form>`,
+    <div class="actions"><button type="button" class="btn" data-close>Abbrechen</button><button type="submit" class="btn primary">Speichern</button></div></form>`,
   s=>{
     let logoVal=src0&&src0.logo?src0.logo:undefined;
     const D=docEditor(s,item&&item.docs?item.docs.slice():[],kind==='d'?{cover:item&&item.cover}:null); // Kopien übernehmen keine Dateien
@@ -1547,8 +1557,8 @@ async function openScanner(onPick){
 
 /* ---------- Suche über alles ---------- */
 function openSearch(){
-  openSheet(head('Suchen')+`<label class="field srchf"><span class="sr">Suchbegriff</span><input id="q" type="search" placeholder="Name, Seriennummer, Notiz, Kundennummer …" autocomplete="off" enterkeyhint="search"></label>
-    <div id="qres" class="qres"></div>`,
+  openSheet(head('Suchen')+`<label class="ds-srch"><span class="sr">Suchbegriff</span><input id="q" type="search" placeholder="Name, Seriennummer, Notiz, Kundennummer …" autocomplete="off" enterkeyhint="search"></label>
+    <div id="qres" class="ds-qres"></div>`,
   s=>{const q=s.querySelector('#q'),R=s.querySelector('#qres');
     const fieldsD=d=>[['',d.name],['',d.hersteller],['',d.modell],['Seriennr.',d.sn],['',d.raum],['',d.haendler],['',d.kategorie],['Notiz',d.notiz],['',(d.docs||[]).map(x=>x.name).join(' ')]];
     const fieldsC=c=>[['',c.anbieter],['',c.kategorie],['Kundennr.',c.kundennr],['Vertragsnr.',c.vertragsnr],['Notiz',c.notiz],['',(c.docs||[]).map(x=>x.name).join(' ')]];
@@ -1558,13 +1568,13 @@ function openSearch(){
       const a=Math.max(0,p-24),txt=(a?'…':'')+v.slice(a,p+40)+(p+40<v.length?'…':'');
       return `<span class="qs">${esc(f[0])}: ${f[0]==='Kundennr.'||f[0]==='Vertragsnr.'?esc(maskVal(v)):esc(txt)}</span>`};
     const draw=()=>{const terms=q.value.toLowerCase().split(/\s+/).filter(Boolean);
-      if(!terms.length){R.innerHTML=`<p class="hint qhint">${db.devices.length} Geräte und ${db.contracts.length} Verträge durchsuchbar – auch Seriennummern, Notizen, Kunden­nummern und Dateinamen von Belegen.</p>`;return}
+      if(!terms.length){R.innerHTML=`<p class="ds-qhint">${db.devices.length} Geräte und ${db.contracts.length} Verträge durchsuchbar – auch Seriennummern, Notizen, Kunden­nummern und Dateinamen von Belegen.</p>`;return}
       const D=[],C=[];
       db.devices.forEach(d=>{const h=hitIn(fieldsD(d),terms);if(h)D.push([d,h])});
       db.contracts.forEach(c=>{const h=hitIn(fieldsC(c),terms);if(h)C.push([c,h])});
-      if(!D.length&&!C.length){R.innerHTML='<p class="hint qhint">Nichts gefunden.</p>';return}
-      R.innerHTML=(D.length?`<div class="label">Geräte</div><div class="list">${D.slice(0,30).map(([d,h])=>`<button type="button" class="row" data-qk="d" data-qi="${d.id}">${tileFor(d)}<div class="main"><div class="t">${esc(d.name)}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}</div>${snip(h,terms)}</div><span></span></button>`).join('')}</div>`:'')
-        +(C.length?`<div class="label">Verträge</div><div class="list">${C.slice(0,30).map(([c,h])=>`<button type="button" class="row" data-qk="c" data-qi="${c.id}">${conTile(c)}<div class="main"><div class="t">${esc(c.anbieter)}</div><div class="s">${esc(c.kategorie)}</div>${snip(h,terms)}</div><span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')}</div>`:'');
+      if(!D.length&&!C.length){R.innerHTML='<p class="ds-qhint">Nichts gefunden.</p>';return}
+      R.innerHTML=(D.length?`<div class="ds-lbl">Geräte</div><div class="ds-qlist">${D.slice(0,30).map(([d,h])=>`<button type="button" class="row" data-qk="d" data-qi="${d.id}">${tileFor(d)}<div class="main"><div class="t">${esc(d.name)}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}</div>${snip(h,terms)}</div><span></span></button>`).join('')}</div>`:'')
+        +(C.length?`<div class="ds-lbl">Verträge</div><div class="ds-qlist">${C.slice(0,30).map(([c,h])=>`<button type="button" class="row" data-qk="c" data-qi="${c.id}">${conTile(c)}<div class="main"><div class="t">${esc(c.anbieter)}</div><div class="s">${esc(c.kategorie)}</div>${snip(h,terms)}</div><span class="amt num">${eur(monthly(c))}<small>/Monat</small></span></button>`).join('')}</div>`:'');
       R.querySelectorAll('[data-qi]').forEach(b=>b.onclick=()=>openDetail(b.dataset.qk,b.dataset.qi))};
     q.addEventListener('input',draw);draw();setTimeout(()=>q.focus(),motion()?320:0);
   });
@@ -1846,7 +1856,11 @@ async function refresh(){
   try{if(swReg){await swReg.update();upd=!!(swReg.waiting||swReg.installing)}}catch(x){}
   await new Promise(r=>setTimeout(r,Math.max(0,750-(Date.now()-t))));
   refreshing=false;hidePtr();if(!db)return;
-  render('rise');toast(upd?'Neue Version gefunden. Tippe oben auf „Aktualisieren“.':'Alles aktuell. Fristen sind neu berechnet.');
+  render('rise');
+  /* Neue Version: gleiche Rückfrage wie in MySmartBox und MyGesundBox */
+  if(upd){if(confirm('Eine neue Version der MyBelegBox ist da. Jetzt neu laden?')){const w=swReg.waiting||swReg.installing;
+      const go=()=>saving.then(()=>w.postMessage('SKIP_WAITING'));if(w){if(w.state==='installed')go();else w.addEventListener('statechange',()=>{if(w.state==='installed')go()})}}}
+  else toast('Alles aktuell. Fristen sind neu berechnet.');
 }
 
 /* ---------- Kippen & Glanz über den Lagesensor ---------- */
