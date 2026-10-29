@@ -4,7 +4,7 @@
 // Eigene Namen je Adresse: Live unter / wie bisher, eine Test-App unter /test/ mit Präfix „test-“
 const SCOPE_PATH = new URL(self.registration.scope).pathname;
 const NS = SCOPE_PATH === '/' ? '' : SCOPE_PATH.replace(/^\/|\/$/g, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-';
-const CACHE = NS + 'belegbox-0.9.0.11';
+const CACHE = NS + 'belegbox-0.9.1.12';
 const INBOX = NS + 'inbox-belegbox', SCHED = NS + 'sched-belegbox';
 const FILES = ['./', 'index.html', 'app.js', 'manifest.webmanifest',
   'icons/belegbox-192.png', 'icons/belegbox-512.png', 'icons/belegbox-maskable-512.png', 'icons/belegbox-maskable-192.png', 'icons/belegbox-180.png', 'icons/belegbox-badge-96.png',

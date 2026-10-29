@@ -1,6 +1,11 @@
-# MyBelegBox – Test-App 0.9.0.11
+# MyBelegBox – Test-App 0.9.1.12
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.9.1
+
+- **Verbindung zur MyGesundBox**: Brillen (als Gerät) und Kontaktlinsen-Abos (als Vertrag) lassen sich aus der MyGesundBox übernehmen. Die MyGesundBox öffnet dafür die MyBelegBox mit einem vorausgefüllten Formular (`?neu=…`), gespeichert wird nur eine Verknüpfung (`ext`). Im Eintrag führt „In der MyGesundBox öffnen“ zurück, `?ref=…` öffnet einen übernommenen Eintrag. Sehstärke-Werte werden nicht übertragen.
+- Neue Kategorie **Gesundheit** bei Geräten und Verträgen, Zahlweise **halbjährlich**.
 
 ## Neu in 0.7
 

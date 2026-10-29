@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.9.0.11';
+const APP_VERSION='0.9.1.12';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -24,9 +24,9 @@ const restTxt=n=>{if(n<60)return n+' Tag'+(n===1?'':'e');const m=Math.round(n/30
 const inDays=n=>n===0?'heute':n===1?'morgen':n<0?'vor '+(-n)+' Tagen':'in '+spanTxt(n);
 
 const NACHWEIS={beleg:'Kassenbon / Rechnung',konto:'Kontoauszug',mail:'Bestellmail',keiner:'Kein Nachweis'};
-const INTERVALL={1:'monatlich',3:'vierteljährlich',12:'jährlich'};
-const DEV_KAT=['Technik','Küche','Haushalt','Werkzeug','Möbel','Sonstiges'];
-const CON_KAT=['Streaming','Handy & Internet','Versicherung','Energie','Fitness','Software','Sonstiges'];
+const INTERVALL={1:'monatlich',3:'vierteljährlich',6:'halbjährlich',12:'jährlich'};
+const DEV_KAT=['Technik','Küche','Haushalt','Werkzeug','Möbel','Gesundheit','Sonstiges'];
+const CON_KAT=['Streaming','Handy & Internet','Versicherung','Energie','Fitness','Software','Gesundheit','Sonstiges'];
 
 /* Beispieldaten gibt es nicht mehr; ältere, unveränderte Beispieleinträge lassen sich über den Hinweis oben entfernen. */
 
@@ -924,7 +924,7 @@ function openDetail(kind,id,from){
             ${d.rate.bank?`<dt>Finanziert über</dt><dd>${esc(d.rate.bank)}</dd>`:''}
             ${d.rate.vnr?`<dt>Finanzierungs-Nr.</dt><dd class="code"><span data-rmask>${esc(maskVal(d.rate.vnr))}</span><button type="button" class="reveal" data-rshow>Anzeigen</button></dd>`:''}
           </dl></div>`)(rateInfo(d))}
-      ${noteBlock(d)}
+      ${noteBlock(d)}${extBlock(d)}
       ${docSection(d)}
       <div class="tools"><button type="button" class="tool" id="claim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.7-7.7a4 4 0 0 0-2-2z"/></svg>Mangel melden</button></div>
       <div class="actions two"><button type="button" class="btn primary" id="edit">Bearbeiten</button><button type="button" class="btn danger" id="del">Löschen</button></div>`,
@@ -952,7 +952,7 @@ function openDetail(kind,id,from){
         <dt>Kündigungsfrist</dt><dd>${Number(c.frist)?c.frist+' Tage':'jederzeit'}</dd>
         ${[['kundennr','Kundennummer'],['vertragsnr','Vertragsnummer']].map(([f,l])=>`<dt>${l}</dt><dd class="code">${c[f]?`<span data-mask="${f}">${esc(maskVal(c[f]))}</span><button type="button" class="reveal" data-show="${f}">Anzeigen</button><button type="button" class="reveal" data-copy="${f}">Kopieren</button>`:'–'}</dd>`).join('')}
       </dl>
-      ${noteBlock(c)}
+      ${noteBlock(c)}${extBlock(c)}
       ${docSection(c)}
       ${c.status!=='gekuendigt'?`<div class="tools">
         <button type="button" class="tool" id="letter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/></svg>Kündigung schreiben</button>
@@ -1036,7 +1036,7 @@ function openForm(kind,item,camera,tpl){
     <label class="field"><span>Anbieter *</span><input id="c_anb" required placeholder="z. B. Spotify"></label>
     <label class="field"><span>Kategorie</span><select id="c_kat">${opt(CON_KAT,'Streaming')}</select></label>
     <div class="grid2"><label class="field"><span>Kosten (€) *</span><input id="c_kost" type="number" step="0.01" min="0" required inputmode="decimal"></label>
-      <label class="field"><span>Zahlweise</span><select id="c_int"><option value="1">monatlich</option><option value="3">vierteljährlich</option><option value="12">jährlich</option></select></label></div>
+      <label class="field"><span>Zahlweise</span><select id="c_int"><option value="1">monatlich</option><option value="3">vierteljährlich</option><option value="6">halbjährlich</option><option value="12">jährlich</option></select></label></div>
     <label class="field"><span>Laufzeit</span><select id="c_mod"><option value="beginn">Aus dem Vertragsbeginn berechnen</option><option value="ende">Aktuelles Laufzeitende selbst angeben</option><option value="offen">Unbefristet, jederzeit kündbar</option></select></label>
     <label class="field" data-m="ende"><span>Aktuelles Laufzeitende *</span><input id="c_end" type="date"></label>
     <div class="grid2" data-m="beginn"><label class="field"><span>Vertragsbeginn *</span><input id="c_beg" type="date" required value="${iso(T0)}"></label>
@@ -1058,8 +1058,8 @@ function openForm(kind,item,camera,tpl){
     <label class="field" data-m="beginn ende"><span id="c_knL">Anderer Preis nach der Mindestlaufzeit (€, optional)</span><input id="c_kn" type="number" step="0.01" min="0" inputmode="decimal" placeholder="leer lassen, wenn der Preis gleich bleibt"></label>
     <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
     </div></details>`;
-  openSheet(head(item?'Bearbeiten':tpl?'Vertrag kopieren':'Neuer Eintrag')+`<form id="frm" novalidate>
-    ${tpl?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
+  openSheet(head(item?'Bearbeiten':tpl?(tpl._ext?'Aus der MyGesundBox':'Vertrag kopieren'):'Neuer Eintrag')+`<form id="frm" novalidate>
+    ${tpl&&tpl._ext?`<p class="hint" style="margin-bottom:12px">Übernommen aus der <b>MyGesundBox</b>. Prüf die Angaben und füg den Kaufbeleg als Foto oder PDF hinzu.</p>`:''}${tpl&&!tpl._ext?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
     <div class="seg"${item||tpl?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
     ${kind==='d'?dev:con}<p class="hint" id="err" style="color:var(--crit)" hidden></p>
     <div class="actions"><button type="submit" class="btn primary">Speichern</button><button type="button" class="btn" data-close>Abbrechen</button></div></form>`,
@@ -1099,7 +1099,7 @@ function openForm(kind,item,camera,tpl){
         if(!await commitDocs())return;
         const dd={name:v('f_name'),kategorie:v('f_kat'),raum:v('f_raum'),hersteller:v('f_her'),modell:v('f_mod'),sn:v('f_sn'),
           kauf:v('f_kauf'),geschaetzt:s.querySelector('#f_ges').checked,preis:parseFloat(v('f_preis'))||0,haendler:v('f_hae'),
-          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,cover:D.cover,rate,notiz:v('x_note')};
+          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,cover:D.cover,rate,notiz:v('x_note'),ext:(item&&item.ext)||(tpl&&tpl._ext)||undefined};
         if(item){Object.assign(item,dd);delete item.ex}else{first=!db.devices.some(x=>!x.ex);db.devices.push(Object.assign({id:uid()},dd))}
         tab='geraete';
       } else {
@@ -1112,7 +1112,7 @@ function openForm(kind,item,camera,tpl){
         if(logo===undefined){ // gleicher Anbieter hat schon ein Logo? Dann übernehmen
           const twin=db.contracts.find(x=>x!==item&&x.logo&&x.anbieter.trim().toLowerCase()===v('c_anb').toLowerCase());logo=twin?twin.logo:''}
         const cc={logo,anbieter:v('c_anb'),kategorie:v('c_kat'),kundennr:v('c_kd'),vertragsnr:v('c_vnr'),kosten:parseFloat(v('c_kost'))||0,kostenNach:v('c_kn')===''?null:(parseFloat(v('c_kn'))||0),
-          intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),docs:D.docs,notiz:v('x_note')};
+          intervall:Number(v('c_int')),modus:md,beginn:md==='beginn'?v('c_beg'):(item&&item.beginn||''),ende:md==='ende'?v('c_end'):'',laufzeit:Number(v('c_lz')),verl:Number(v('c_verl')),frist:Number(v('c_fr')),docs:D.docs,notiz:v('x_note'),ext:(item&&item.ext)||(tpl&&tpl._ext)||undefined};
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
       }
@@ -1717,13 +1717,14 @@ function openShareText(items,info){
 
 /* ---------- Schnellaktionen am App-Icon und Start nach dem Entsperren ---------- */
 const QS=new URLSearchParams(location.search);
-let pendingAct=QS.get('aktion'),pendingShare=QS.has('geteilt');
+let pendingAct=QS.get('aktion'),pendingShare=QS.has('geteilt'),pendingNeu=QS.get('neu'),pendingRef=QS.get('ref');
 if(location.search){try{history.replaceState(null,'',location.pathname)}catch(e){}}
 function afterUnlock(){
   setTimeout(async()=>{if(!db)return;
     let items=[];try{items=await inboxFiles()}catch(e){}
     if(items.length){pendingAct=null;pendingShare=false;openInbox(items);return}
     if(pendingShare){pendingShare=false;openShareText([],{})}
+    if(pendingNeu||pendingRef){const n=pendingNeu,rf=pendingRef;pendingNeu=pendingRef=null;openExternal(n,rf);remindPing(false);return}
     const a=pendingAct;pendingAct=null;
     if(a==='foto')openForm('d',null,true);else if(a==='geraet')openForm('d');else if(a==='vertrag')openForm('c');else if(a==='suche')openSearch();
     remindPing(false);
@@ -1892,5 +1893,30 @@ if('serviceWorker' in navigator){
       w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)offer(w)})});
     setInterval(()=>reg.update().catch(()=>{}),60*60e3);
   }).catch(()=>{});
+}
+
+/* ================= Verbindung zur MyGesundBox (0.9.1) =================
+   Die MyGesundBox schickt einen Eintrag als Link (?neu=…). Gespeichert wird nur die Verknüpfung (ext),
+   die Daten bleiben in der jeweiligen App. ?ref=… öffnet einen bereits übernommenen Eintrag. */
+const GB_URL=/^https:\/\/jazm-gesundbox\.github\.io\//;
+function b64urlDecode(t){t=String(t||'').replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';return td.decode(fromB64(t))}
+function findExt(ref){if(!db||!ref)return null;const d=db.devices.find(x=>x.ext&&x.ext.ref===ref);if(d)return['d',d];const c=db.contracts.find(x=>x.ext&&x.ext.ref===ref);return c?['c',c]:null}
+function extBlock(x){if(!x||!x.ext||!GB_URL.test(x.ext.url||''))return '';
+  return `<a class="extlink" href="${esc(x.ext.url)}" target="_blank" rel="noopener"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.6-9.5 9-9.5 9z"/></svg></span><span class="at"><b>In der MyGesundBox öffnen</b><small>${esc(x.ext.what||'Sehstärke, Gläser und Pflege')}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></a>`}
+function openExternal(neu,ref){
+  try{
+    if(ref){const f=findExt(ref);if(f){tab=f[0]==='d'?'geraete':'vertraege';render();openDetail(f[0],f[1].id)}else toast('Dieser Eintrag ist noch nicht in der MyBelegBox.');return}
+    const o=JSON.parse(b64urlDecode(neu));if(!o||!o.ref||!/^mygesundbox:/.test(o.ref))throw new Error('format');
+    const f=findExt(o.ref);if(f){tab=f[0]==='d'?'geraete':'vertraege';render();openDetail(f[0],f[1].id);toast('Ist schon in der MyBelegBox.');return}
+    const ext={src:'MyGesundBox',ref:String(o.ref),url:GB_URL.test(o.url||'')?String(o.url):'',what:String(o.what||'')};
+    const str=v=>v==null?'':String(v).slice(0,300),num=v=>{const n=parseFloat(v);return isFinite(n)&&n>=0?n:0};
+    if(o.k==='c'){
+      openForm('c',null,false,{_ext:ext,anbieter:str(o.anbieter),kategorie:'Gesundheit',kosten:num(o.kosten),intervall:Number(o.intervall)||1,modus:['beginn','ende','offen'].includes(o.modus)?o.modus:'offen',
+        laufzeit:Number(o.laufzeit)||1,verl:Number(o.verl)||1,frist:Number(o.frist)||0,notiz:str(o.notiz),logo:''});
+    }else{
+      openForm('d',null,false,{_ext:ext,name:str(o.name)||'Brille',kategorie:'Gesundheit',raum:str(o.raum),hersteller:str(o.hersteller),modell:str(o.modell),
+        kauf:/^\d{4}-\d{2}-\d{2}$/.test(o.kauf||'')?o.kauf:iso(T0),preis:num(o.preis),haendler:str(o.haendler),garantieMonate:Number(o.garantieMonate)||0,nachweis:'keiner',notiz:str(o.notiz)});
+    }
+  }catch(e){toast('Der Link aus der MyGesundBox ließ sich nicht lesen.')}
 }
 })();
