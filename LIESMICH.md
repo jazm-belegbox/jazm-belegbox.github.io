@@ -1,6 +1,10 @@
-# MyBelegBox – Test-App 0.10.1.0
+# MyBelegBox – Test-App 0.10.2.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.10.2
+
+- Verknüpfungen zur MySmartBox führen auf die neue Adresse https://jazm-smartbox.github.io/ (auch bei schon gespeicherten Einträgen).
 
 ## Neu in 0.10.1
 

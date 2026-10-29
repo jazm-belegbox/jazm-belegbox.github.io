@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.10.1.0';
+const APP_VERSION='0.10.2.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -1928,7 +1928,9 @@ const extApp=x=>x&&x.ext&&EXT_APPS.find(a=>a.re.test(x.ext.url||''));
 function b64urlDecode(t){t=String(t||'').replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';return td.decode(fromB64(t))}
 function findExt(ref){if(!db||!ref)return null;const d=db.devices.find(x=>x.ext&&x.ext.ref===ref);if(d)return['d',d];const c=db.contracts.find(x=>x.ext&&x.ext.ref===ref);return c?['c',c]:null}
 function extBlock(x){const a=extApp(x);if(!a)return '';
-  return `<a class="extlink ${a.cls}" href="${esc(x.ext.url)}" target="_blank" rel="noopener"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${a.ico}</svg></span><span class="at"><b>In der ${a.src} öffnen</b><small>${esc(x.ext.what||a.what)}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></a>`}
+  /* Alte Links aus der Zeit vor dem Umbenennen des MySmartBox-Repos auf die kurze Adresse umbiegen */
+  const url=String(x.ext.url).replace(/^https:\/\/jazm-smartbox\.github\.io\/https-jazm-smartbox\.github\.io\//,'https://jazm-smartbox.github.io/');
+  return `<a class="extlink ${a.cls}" href="${esc(url)}" target="_blank" rel="noopener"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${a.ico}</svg></span><span class="at"><b>In der ${a.src} öffnen</b><small>${esc(x.ext.what||a.what)}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></a>`}
 /* Ähnliche vorhandene Geräte finden (z. B. „TV“ ↔ „Fernseher Wohnzimmer“) */
 const SYN=[['tv','fernseher','fernseh','television'],['kühlschrank','kuehlschrank'],['waschmaschine','wama'],['trockner','wäschetrockner'],['saugroboter','saug','robot','staubsauger'],['lautsprecher','speaker','sonos','echo','alexa'],['router','fritzbox','fritz!box'],['kamera','cam','arlo']];
 const nrm=t=>String(t||'').toLowerCase().replace(/[^a-z0-9äöüß ]/g,' ').replace(/\s+/g,' ').trim();
