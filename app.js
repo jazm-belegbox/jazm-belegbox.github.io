@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.9.5.0';
+const APP_VERSION='0.10.0.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -73,11 +73,14 @@ async function persist(){
 const GH_API='https://api.github.com',GH_LS=NS+'belegbox-gh-status';
 let ghTimer=0,ghBusy=false,ghAgain=null,ghPending=null;
 let ghStat=(()=>{try{return JSON.parse(localStorage.getItem(GH_LS))||{}}catch(e){return {}}})();
-function setGhStat(o){const prev=ghStat.err||'';ghStat=Object.assign({},ghStat,o);try{localStorage.setItem(GH_LS,JSON.stringify(ghStat))}catch(e){}
+function setGhStat(o){const prev=ghStat.err||'';ghStat=Object.assign({},ghStat,o);if(db)setTimeout(()=>{try{const g=ghCfg();DS.lockDot(document.getElementById('lockBtn'),{ghErr:g?(ghStat.err||''):'',ghOk:!!(g&&ghStat.at&&!ghStat.err),own:db.devices.length+db.contracts.length>0,days:db.meta&&db.meta.lastBackup?-days(parse(db.meta.lastBackup)):null,dirty:db.meta&&db.meta.dirty||0})}catch(e){}},0);try{localStorage.setItem(GH_LS,JSON.stringify(ghStat))}catch(e){}
   const el=document.getElementById('ghStatus');if(el)el.innerHTML=ghStatusText();if(db&&!root.firstElementChild&&o.err!==undefined&&(o.err||'')!==prev)render()}
 function ghCfg(){const g=db&&db.meta&&db.meta.gh;return g&&g.token&&g.owner&&g.repo?Object.assign({},g):null}
+/* Optionaler Ordner im Repo: so können alle drei Boxen in ein gemeinsames Repo sichern */
+const bkDir=v=>String(v||'').trim().replace(/^\/+|\/+$/g,'').replace(/[^\w.\/-]/g,'');
 async function ghFetch(g,method,path,body,raw){
-  const r=await fetch(`${GH_API}/repos/${encodeURIComponent(g.owner)}/${encodeURIComponent(g.repo)}${path}`,{method,cache:'no-store',
+  path=g.dir&&path.startsWith('/contents/')?'/contents/'+encodeURI(g.dir)+'/'+path.slice(10):g.dir&&path==='/contents'?'/contents/'+encodeURI(g.dir):path;
+    const r=await fetch(`${GH_API}/repos/${encodeURIComponent(g.owner)}/${encodeURIComponent(g.repo)}${path}`,{method,cache:'no-store',
     headers:Object.assign({Authorization:'Bearer '+g.token,Accept:raw?'application/vnd.github.raw+json':'application/vnd.github+json'},body?{'Content-Type':'application/json'}:{}),
     body:body?JSON.stringify(body):undefined});
   if(r.status===404&&method==='GET')return null;
@@ -271,14 +274,9 @@ const RM=window.matchMedia?matchMedia('(prefers-reduced-motion: reduce)'):{match
 const motion=()=>!RM.matches&&!!Element.prototype.animate;
 const buzz=p=>{try{if(navigator.vibrate&&!document.hidden)navigator.vibrate(p)}catch(e){}};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-function celebrate(text){buzz([12,50,24]);
-  if(!motion()){if(text)toast(text);return}
-  const cols=['var(--accent)','var(--ok)','var(--gold)','var(--warn)'];
-  const el=document.createElement('div');el.className='yay';el.setAttribute('aria-hidden','true');
-  el.innerHTML=`<div class="card"><svg viewBox="0 0 52 52"><circle class="yc" cx="26" cy="26" r="23"/><path class="yk" d="M15 27l7 7 15-16"/></svg>${
-    Array.from({length:10},(_,i)=>`<i style="--a:${i*36}deg;--c:${cols[i%4]}"></i>`).join('')}${text?`<b>${esc(text)}</b>`:''}</div>`;
-  document.body.appendChild(el);setTimeout(()=>el.remove(),1600);
-}
+/* Feier-Effekt: gemeinsamer Baustein in ds.js; großes Konfetti bei besonderen Momenten */
+const BIG_YAY=new Set(['Gekündigt','Update online','GitHub verbunden','Erste Sicherung','Dein erstes Gerät!']);
+function celebrate(text){if(!motion()){buzz([12,50,24]);if(text)toast(text);return}DS.yay(text,BIG_YAY.has(text))}
 /* Zahlen hochzählen lassen */
 let shown={};
 function countUps(fromZero){
@@ -328,6 +326,7 @@ function showLock(closing){
       <div class="ghbox" id="lgh" hidden>
         <label class="field"><span>Konto / Organisation</span><input id="lgo_o" value="jazm-belegbox" autocomplete="off" autocapitalize="off"></label>
         <label class="field"><span>Repo</span><input id="lgo_r" value="belegbox-daten" autocomplete="off" autocapitalize="off"></label>
+        <label class="field"><span>Ordner im Repo (optional)</span><input id="lgo_d" value="" placeholder="leer lassen oder z. B. belegbox" autocomplete="off" autocapitalize="off"></label>
         <label class="field"><span>Zugangsschlüssel (github_pat_…)</span><input id="lgo_t" type="password" autocomplete="off"></label>
         <p class="hint" id="lgo_msg" hidden></p>
         <button type="button" class="btn primary" id="lgo_go">Sicherung von GitHub laden</button></div>`
@@ -385,7 +384,7 @@ function showLock(closing){
   const gho=L.querySelector('#lghOpen');
   if(gho){gho.onclick=()=>{const b=L.querySelector('#lgh');b.hidden=!b.hidden;if(!b.hidden)L.querySelector('#lgo_t').focus()};
     L.querySelector('#lgo_go').onclick=async()=>{const m=L.querySelector('#lgo_msg'),bt=L.querySelector('#lgo_go');
-      const g={owner:L.querySelector('#lgo_o').value.trim(),repo:L.querySelector('#lgo_r').value.trim(),token:L.querySelector('#lgo_t').value.trim()};
+      const g={owner:L.querySelector('#lgo_o').value.trim(),repo:L.querySelector('#lgo_r').value.trim(),token:L.querySelector('#lgo_t').value.trim()};const dd=bkDir(L.querySelector('#lgo_d').value);if(dd)g.dir=dd;
       if(!g.owner||!g.repo||!g.token){m.textContent='Bitte alle drei Felder ausfüllen.';m.style.color='var(--crit)';m.hidden=false;return}
       bt.disabled=true;m.style.color='';m.hidden=false;m.textContent='Lade Tresor …';V.classList.add('busy');
       try{const o=await ghRestore(g,(i,n)=>{m.textContent=`Lade Dokumente … ${i} von ${n}`});V.classList.remove('busy');await restoreVault(o)}
@@ -518,14 +517,14 @@ function closeViewer(){viewerTok++;const V=document.getElementById('viewer');if(
 
 /* Verschlüsselte Sicherung: enthält nur den bereits verschlüsselten Tresor */
 async function exportBackup(){
-  db.meta=Object.assign({},db.meta,{lastBackup:iso(T0),dirty:0});
+  const first=!(db.meta&&db.meta.lastBackup);db.meta=Object.assign({},db.meta,{lastBackup:iso(T0),dirty:0});
   await save();
   const v=readVault();if(!v){toast('Es gibt noch nichts zu sichern.');return}
   const files={};
   for(const id of allDocIds()){const r=await fileGet(id).catch(()=>null);if(r)files[id]={iv:toB64(r.iv),ct:toB64(r.ct)}}
   const payload=JSON.stringify({app:'belegbox',format:2,exported:new Date().toISOString(),version:APP_VERSION,vault:v,files});
   const ok=await deliverFile('belegbox-sicherung-'+iso(T0)+'.belegbox',payload,'application/json');
-  if(ok){celebrate('Gesichert');toast('Sicherung erstellt. Leg die Datei an einem zweiten Ort ab, z. B. in deiner Cloud.');render()}
+  if(ok){celebrate(first?'Erste Sicherung':'Gesichert');toast('Sicherung erstellt. Leg die Datei an einem zweiten Ort ab, z. B. in deiner Cloud.');render()}
 }
 function readBackupFile(file){return new Promise((res,rej)=>{const r=new FileReader();
   r.onload=()=>{try{const o=JSON.parse(r.result);const v=o&&o.app==='belegbox'&&o.vault;
@@ -684,19 +683,8 @@ function devThumb(d){const ds=(d.docs||[]).filter(x=>x.thumb);
   return ds[0]?{src:ds[0].thumb,top:true}:null}
 function tileFor(d){const t=devThumb(d);
   return t?`<div class="tile"><img src="${t.src}" alt=""${t.top?' style="object-position:top"':''}></div>`:`<div class="tile ic">${catIcon(d.kategorie)}</div>`}
-/* Erinnerung an die Datensicherung – gleich in MySmartBox, MyGesundBox und MyBelegBox */
-const DS_ICO_DOWN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg>';
-const DS_ICO_WARN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
-function dsRemindHtml(o,attr){
-  const e=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const card=(cls,ico,t,s,go)=>`<button type="button" class="ds-remind${cls}" ${attr}><span class="ds-remind-i">${ico}</span><span class="ds-remind-t"><b>${e(t)}</b><small>${e(s)}</small></span><span class="ds-remind-go">${go}</span></button>`;
-  if(o.ghErr)return card(' crit',DS_ICO_WARN,'GitHub-Sicherung: Problem',o.ghErr,'Ansehen');
-  if(!o.own||o.ghOk)return '';
-  const d=o.days,dirty=o.dirty||0;
-  if(d!=null&&d<=14&&dirty<5)return '';
-  return card('',DS_ICO_DOWN,d==null?'Noch keine Datensicherung':dirty>=5?dirty+' Änderungen seit der letzten Datensicherung':'Letzte Datensicherung vor '+d+' Tagen',
-    'Ohne Sicherung sind bei Handyverlust oder gelöschten Browserdaten alle Daten weg.','Sichern');
-}
+/* Erinnerung an die Datensicherung: gemeinsamer Baustein in ds.js */
+const dsRemindHtml=(o,attr)=>DS.remindHtml(o,attr);
 function render(mode){
   if(!db)return;
   document.querySelectorAll('nav.tabs button').forEach(b=>b.setAttribute('aria-current',b.dataset.tab===tab?'page':'false'));
@@ -707,13 +695,17 @@ function render(mode){
   const lb=db.meta&&db.meta.lastBackup?parse(db.meta.lastBackup):null;
   const dirty=db.meta&&db.meta.dirty||0;
   const ghOn=!!ghCfg(),ghOk=ghOn&&!ghStat.err&&ghStat.at;
-  const remind=dsRemindHtml({ghErr:ghOn?(ghStat.err||''):'',ghOk:!!ghOk,own,days:lb?-days(lb):null,dirty},'id="dsRemind"');
+  const bkO={ghErr:ghOn?(ghStat.err||''):'',ghOk:!!ghOk,own,days:lb?-days(lb):null,dirty};
+  const remind=dsRemindHtml(bkO,'id="dsRemind"');DS.lockDot(document.getElementById('lockBtn'),bkO);
   const ce=document.getElementById('clearEx'); if(ce) ce.onclick=()=>{db.devices=db.devices.filter(x=>!x.ex);db.contracts=db.contracts.filter(x=>!x.ex);save();buzz(10);render('rows')};
   main.innerHTML= tab==='home'?remind+viewHome(): tab==='geraete'?viewDevices(): viewContracts();
   const rmd=document.getElementById('dsRemind');if(rmd)rmd.onclick=()=>{menuAcc='gh';openMenu()};
   main.querySelectorAll('[data-open]').forEach(el=>el.onclick=()=>openDetail(el.dataset.kind,el.dataset.open,el));
   main.querySelectorAll('[data-filter]').forEach(el=>el.onclick=()=>{if(filter===el.dataset.filter)return;filter=el.dataset.filter;buzz(5);render('rows')});
   main.querySelectorAll('[data-goto]').forEach(el=>el.onclick=()=>goTab(el.dataset.goto));
+  const gb=document.getElementById('gaugeBtn');if(gb)gb.onclick=()=>dsForm('Monatsbudget',[{k:'b',l:'Budget für Fixkosten pro Monat (€)',v:db.meta&&db.meta.budget?String(db.meta.budget).replace('.',','):''}],async(v,fail)=>{
+    const t=String(v.b||'').trim().replace(/\./g,'').replace(',','.'),n=t?parseFloat(t):0;if(t&&!(n>0))return fail('Bitte einen Betrag größer 0 eintragen – oder leer lassen.');
+    db.meta=Object.assign({},db.meta,{budget:n||0});save();render();buzz(8)},{ok:'Speichern',html:'<p class="ds-dlg-intro">Die Nadel im Tachometer zeigt dann, wie viel deines Budgets die Fixkosten belegen. Leer lassen schaltet die Nadel aus.</p>'});
   if(tab==='home'){bindCheck();const rg=main.querySelector('#revGo');if(rg)rg.onclick=openReview}
   else if(tab==='geraete')bindToolbar(DEV_F,DEV_S,'sortD',db.devices);
   else bindToolbar(CON_F,CON_S,'sortC',db.contracts);
@@ -741,8 +733,9 @@ function viewHome(){
   return `<section class="view">
     <div class="summary">
       <div><div class="label">Fixkosten pro Monat</div>
-        <div class="bigcost"><span class="num" data-count="mon" data-v="${mon}" data-f="eur">${eur(mon)}</span><small><span data-count="jahr" data-v="${mon*12}" data-f="eur">${eur(mon*12)}</span> im Jahr · ${dayTxt(mon*12/365)} am Tag</small></div></div>
-      ${kats.length?`<div class="bars">${kats.map(([k,v])=>`<div class="bar"><span class="bl">${esc(k)}</span><div class="track"><div class="fill" style="width:${Math.max(4,v/max*100)}%"></div></div><span class="num">${eur(v)}</span></div>`).join('')}</div>`:''}
+        ${mon>0?gauge(kats,mon):''}
+        <div class="bigcost${mon>0?' ongauge':''}"><span class="num" data-count="mon" data-v="${mon}" data-f="eur">${eur(mon)}</span><small><span data-count="jahr" data-v="${mon*12}" data-f="eur">${eur(mon*12)}</span> im Jahr · ${dayTxt(mon*12/365)} am Tag</small></div></div>
+      ${kats.length?`<div class="bars">${kats.map(([k,v],i)=>`<div class="bar"><span class="bl"><i class="gdot" style="background:${GCOL[i%GCOL.length]}"></i>${esc(k)}</span><div class="track"><div class="fill" style="width:${Math.max(4,v/max*100)}%;background:${GCOL[i%GCOL.length]}"></div></div><span class="num">${eur(v)}</span></div>`).join('')}</div>`:''}
       <div class="facts">
         <button type="button" class="fact" data-goto="vertraege"><b class="num" data-count="akt" data-v="${act.length}">${act.length}</b><span>Verträge aktiv</span></button>
         <button type="button" class="fact" data-goto="geraete"><b class="num" data-count="ger" data-v="${db.devices.length}">${db.devices.length}</b><span>Geräte<br><small class="num">Wert ${eur(wert).replace(',00','')}</small></span></button>
@@ -753,15 +746,29 @@ function viewHome(){
     ${checkCard()}
     <div class="sechead"><h2>Demnächst fällig</h2><span class="label">nächste 90 Tage</span></div>
     <div class="list">${ev.length?ev.map(e=>`<button type="button" class="row" data-kind="${e.kind}" data-open="${e.id}">
-        <div class="date"><b>${e.date.getDate()}</b><span>${e.date.toLocaleDateString('de-DE',{month:'short'}).replace('.','')}</span></div>
+        ${(()=>{const cd=!e.weiter&&e.n>=0&&e.n<=14&&e.sub==='Letzter Kündigungstag';return `<div class="date${cd?' cdate'+(e.n<=3?' hot':e.n<=7?' warm':''):''}"${cd?` title="Noch ${e.n} ${e.n===1?'Tag':'Tage'} zum Kündigen"`:''}>${cd?`<svg viewBox="0 0 46 46" preserveAspectRatio="none" aria-hidden="true"><rect x="1.5" y="1.5" width="43" height="43" rx="9" pathLength="100" class="cdt"/><rect x="1.5" y="1.5" width="43" height="43" rx="9" pathLength="100" class="cdf" style="stroke-dasharray:${(Math.max(0,Math.min(1,e.n/14))*100).toFixed(1)} 100"/></svg>`:''}<b>${e.date.getDate()}</b><span>${e.date.toLocaleDateString('de-DE',{month:'short'}).replace('.','')}</span></div>`})()}
         <div class="evmain">${evMini(e)}<div style="min-width:0"><div class="t">${esc(e.title)}</div><div class="s">${esc(e.sub)}</div></div></div>
-        <span class="pill ${e.weiter?'p-none':e.n<=14?'p-crit':e.n<=45?'p-warn':'p-ok'}">${e.weiter?'läuft weiter':inDays(e.n)}</span></button>`).join('')
+        <span class="pillwrap"><span class="pill ${e.weiter?'p-none':e.n<=14?'p-crit':e.n<=45?'p-warn':'p-ok'}">${e.weiter?'läuft weiter':inDays(e.n)}</span></span></button>`).join('')
       :`<div class="empty">Keine Fristen in den nächsten 90 Tagen.</div>`}</div>
     ${ohne?`<div class="sechead"><h2>Ohne Nachweis</h2><button type="button" class="ghost" data-goto="geraete">Alle Geräte</button></div>
     <div class="list">${db.devices.filter(d=>d.nachweis==='keiner').map(devRow).join('')}</div>
     <details class="tip"><summary>Wo finde ich alte Kaufbelege?</summary><p>Bestellhistorie bei Online-Händlern, alte Bestellmails und Kontoauszüge durchsuchen. Für die Gewährleistung reicht oft jeder plausible Kaufnachweis.</p></details>`:''}
   </section>`;
 }
+/* Kosten-Tachometer: Halbkreis aus den Kategorien, die Nadel fährt beim Öffnen hoch */
+const GCOL=['var(--accent)','var(--gold)','#3B82C4','var(--warn)','#8E5BC9','var(--ok)','#C2477A','var(--muted)'];
+function gauge(kats,total){
+  const R=80,C=Math.PI*R,cx=100,cy=96;let off=0;
+  const segs=kats.map(([k,v],i)=>{const len=v/total*C,seg=`<path d="M${cx-R} ${cy} A${R} ${R} 0 0 1 ${cx+R} ${cy}" pathLength="${C.toFixed(2)}" class="gseg" style="stroke:${GCOL[i%GCOL.length]};stroke-dasharray:${Math.max(0,len-1.5).toFixed(2)} ${C.toFixed(2)};stroke-dashoffset:${(-off).toFixed(2)};--i:${i}"/>`;off+=len;return seg}).join('');
+  const ticks=[...Array(11)].map((_,i)=>{const a=Math.PI*(1-i/10),r1=R+12,r2=R+(i%5?16:19);return `<line x1="${(cx+r1*Math.cos(a)).toFixed(1)}" y1="${(cy-r1*Math.sin(a)).toFixed(1)}" x2="${(cx+r2*Math.cos(a)).toFixed(1)}" y2="${(cy-r2*Math.sin(a)).toFixed(1)}"/>`}).join('');
+  /* Mit Monatsbudget zeigt die Nadel, wie viel davon die Fixkosten verbrauchen */
+  const bud=Number(db.meta&&db.meta.budget)||0,q=bud?total/bud:0,ang=Math.min(1.08,q)*180-90;
+  const lbl=bud?`${Math.round(q*100)} % von ${eur(bud).replace(',00','')} Budget`:'Budget festlegen';
+  return `<button type="button" class="gauge${bud?' hasbud':''}${q>1?' over':''}" id="gaugeBtn" aria-label="Monatsbudget: ${esc(lbl)}"><svg viewBox="0 0 200 106" aria-hidden="true"><path d="M${cx-R} ${cy} A${R} ${R} 0 0 1 ${cx+R} ${cy}" class="gtrack"/>${segs}<g class="gticks">${ticks}</g>${bud?`<g class="gneedle" style="--a:${ang.toFixed(1)}deg"><line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy-R+8}"/><circle cx="${cx}" cy="${cy}" r="6"/></g>`:''}</svg><span class="glbl">${esc(lbl)}</span></button>`;
+}
+/* Kündigungs-Countdown: siehe Datumskachel in „Demnächst fällig“ (schrumpfender Rand in den letzten 14 Tagen) */
+/* Garantie-Ampel: farbiger Rand in der Geräteliste */
+function gzClass(d){const p=prot(d);if(!p)return '';if(p.left<0)return ' gz-none';if(p.left<=60)return ' gz-crit';return p.f<.5?' gz-warn':' gz-ok'}
 /* Garantie-Ring: wie viel vom Schutz noch übrig ist, grün → gelb → rot */
 function prot(d){const i=deviceInfo(d);if(!i.best)return null;
   const total=Math.max(1,(i.best.date-i.kauf)/864e5),left=days(i.best.date);
@@ -771,7 +778,7 @@ function ring(f,size,w){const r=(size-w)/2,c=+(2*Math.PI*r).toFixed(2),h=size/2;
   return `<svg class="ring" viewBox="0 0 ${size} ${size}" style="--c:${c}" aria-hidden="true"><circle class="trk" cx="${h}" cy="${h}" r="${r}" stroke-width="${w}"/>${f==null?'':
     `<circle class="arc" cx="${h}" cy="${h}" r="${r}" stroke-width="${w}" stroke-dasharray="${c}" stroke-dashoffset="${(c*(1-f)).toFixed(2)}" transform="rotate(-90 ${h} ${h})" style="stroke:${ringColor(f)}"/>`}</svg>`}
 function tileWrap(d){const p=prot(d);return `<div class="tw">${ring(p?p.f:null,46,3.5)}${tileFor(d)}</div>`}
-function devRow(d){const i=deviceInfo(d);return `<button type="button" class="row" data-kind="d" data-open="${d.id}">
+function devRow(d){const i=deviceInfo(d);return `<button type="button" class="row${gzClass(d)}" data-kind="d" data-open="${d.id}">
   ${tileWrap(d)}<div class="main"><div class="t">${esc(d.name)}${d.notiz?NOTEICON:''}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).concat((d.geschaetzt?'ca. ':'')+i.kauf.getFullYear()).join(' · '))}</div><div class="pl">${devPill(d)}${(r=>r&&r.aktiv?` <span class="pill p-none">Rate ${eur(r.b)} · noch ${r.rest} von ${r.n}</span>`:'')(rateInfo(d))}</div></div>
   ${amtFor(d)}</button>`}
 /* Betrag rechts: bei Ratenkauf Endsumme, bisher gezahlt und Fortschritt */
@@ -1124,7 +1131,10 @@ function openForm(kind,item,camera,tpl){
         if(item){Object.assign(item,cc);delete item.ex}else db.contracts.push(Object.assign({id:uid(),status:'aktiv'},cc));
         tab='vertraege';
       }
-      filter='alle';db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});save();D.cleanup();closeSheet();render(item?undefined:'rows');
+      filter='alle';db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});save();D.cleanup();
+      /* Haken im Speichern-Knopf, dann schließt das Blatt (wie MySmartBox / MyGesundBox) */
+      const sb=s.querySelector('#frm [type=submit]');if(motion()&&sb){DS.savedTick(sb);await new Promise(r=>setTimeout(r,600))}
+      closeSheet();render(item?undefined:'rows');
       if(item){buzz(12);toast('Änderungen gespeichert.');openDetail(kind,item.id)}
       else celebrate(first?'Dein erstes Gerät!':'Gespeichert');
     });
@@ -1258,7 +1268,7 @@ async function updWatch(g,sha){
 }
 const relTime=t=>{const m=Math.round((Date.now()-t)/6e4);return m<1?'gerade eben':m<60?'vor '+m+' Min.':m<1440?'vor '+Math.round(m/60)+' Std.':'vor '+Math.round(m/1440)+' Tagen'};
 /* Ein Bereich im Blatt „Daten & Sicherheit“ – gleicher Aufbau wie in MySmartBox und MyGesundBox */
-const MI={lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',down:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>',
+const MI={sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',down:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>',
   bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/>',star:'<path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.2l5.9-.9z"/>',
   cal:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',pkg:'<path d="M21 8l-9-5-9 5 9 5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/>',list:'<path d="M4 6h16M4 12h16M4 18h10"/>'};
 const mIco=k=>`<span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${MI[k]}</svg></span>`;
@@ -1279,7 +1289,7 @@ function openMenu(){
     <div class="ds-acts"><button type="button" class="ds-btn" id="pwBtn">Passwort ändern</button></div>`)
   +mAcc('gh','down','Datensicherung',(g?'GitHub '+(ghStat.err?'⚠️ Problem':'an'):'GitHub aus')+' · '+(lb?'Datei '+fmtD(parse(lb)):'keine Datei'),`
     <div class="ds-lbl">Automatisch in GitHub</div>
-    ${g?`<p class="ds-hint">Nach jeder Änderung landet der verschlüsselte Tresor in <b>${esc(g.owner)}/${esc(g.repo)}</b>. GitHub sieht nur verschlüsselte Daten.</p>
+    ${g?`<p class="ds-hint">Nach jeder Änderung landet der verschlüsselte Tresor in <b>${esc(g.owner)}/${esc(g.repo)}${g.dir?'/'+esc(g.dir):''}</b>. GitHub sieht nur verschlüsselte Daten.</p>
     <div class="ds-stat" id="ghStatus">${ghStatusText()}</div>
     ${ghStat.conflict?`<div class="ds-box crit">Im Repo liegt ein anderer Tresor (z. B. von einem früheren Gerät). Er bleibt in der Versionsgeschichte von GitHub erhalten, wenn du ihn ersetzt.<div class="ds-acts"><button type="button" class="ds-btn pri" id="ghPull">GitHub-Stand laden</button><button type="button" class="ds-btn dng" id="ghForce">Durch diesen ersetzen</button></div></div>`:''}
     <div class="ds-acts"><button type="button" class="ds-btn pri" id="ghNow">Jetzt sichern</button><button type="button" class="ds-btn" id="ghOff">Trennen</button></div>`
@@ -1305,10 +1315,11 @@ function openMenu(){
     :`<p class="ds-hint">Neue Versionen als Zip direkt aus der App veröffentlichen. Dafür brauchst du einen eigenen Zugangsschlüssel nur für das App-Repo.</p>
     <div class="ds-acts"><button type="button" class="ds-btn pri" id="up_chg">GitHub verbinden</button></div>`}
     <div id="updStatus" class="ds-box"${UPD?'':' hidden'}>${UPD}</div>`,!!UPD)
+  +mAcc('look','sun','Darstellung',({auto:'Automatisch',light:'Hell',dark:'Dunkel'})[DS.getTheme()]+' · hell oder dunkel',`<div class="ds-lbl">Hell oder dunkel</div>${DS.themeHtml()}`)
   +mAcc('eintr','list','Einträge',db.devices.length+' Geräte · '+db.contracts.length+' Verträge',`
     <p class="ds-hint">${db.devices.length} Geräte · ${db.contracts.length} Verträge. Löscht alle Geräte, Verträge und Dokumente auf diesem Gerät. Das lässt sich nicht rückgängig machen.</p>
     <div class="ds-acts"><button type="button" class="ds-btn dng" id="del">Alle Einträge löschen</button></div>`)
-  +`<p class="ds-ver">MyBelegBox · Version ${APP_VERSION}</p>`,
+  +`<div class="ds-lbl">Meine Boxen</div>${DS.boxesHtml()}<p class="ds-ver">MyBelegBox · Version ${APP_VERSION}</p>`,
   s=>{s.querySelectorAll('details.acc[data-acc]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open){menuAcc=d.dataset.acc;
        s.querySelectorAll('details.acc[open]').forEach(o=>{if(o!==d)o.open=false});buzz(4)}else if(menuAcc===d.dataset.acc)menuAcc=null}));
      s.querySelector('#pwBtn').onclick=()=>dsForm('Passwort ändern',[{k:'p0',l:'Aktuelles Passwort',t:'password',req:true,ac:'current-password'},{k:'p1',l:'Neues Passwort (mind. 10 Zeichen)',t:'password',req:true,ac:'new-password'},{k:'p2',l:'Neues Passwort wiederholen',t:'password',req:true,ac:'new-password'}],async(v,fail)=>{
@@ -1322,9 +1333,9 @@ function openMenu(){
             else{await enableBio();closeSheet();celebrate('Fingerabdruck an');toast('Fingerabdruck eingeschaltet. Probier es gleich mit „Sperren“ aus.')} }
        catch(x){bb.disabled=false;toast(x&&x.name==='NotAllowedError'?'Abgebrochen.':(x&&x.name==='InvalidStateError'?'Für dieses Gerät gibt es schon einen MyBelegBox-Passkey. Lösche ihn im Passwortmanager und versuch es erneut.':(x&&x.message)||'Das hat nicht geklappt.'))}};
      const ghS=s.querySelector('#ghSetup');
-     if(ghS)ghS.onclick=()=>dsForm('GitHub-Sicherung einrichten',[{k:'owner',l:'Konto / Organisation',req:true,v:'jazm-belegbox'},{k:'repo',l:'Privates Repo',req:true,v:'belegbox-daten'},{k:'token',l:'Zugangsschlüssel (github_pat_…)',t:'password',req:true}],async(v,fail)=>{
-       const g={owner:v.owner.trim(),repo:v.repo.trim(),token:v.token.trim()};
-       if(!g.owner||!g.repo||!g.token)return fail('Bitte alle drei Felder ausfüllen.');
+     if(ghS)ghS.onclick=()=>dsForm('GitHub-Sicherung einrichten',[{k:'owner',l:'Konto / Organisation',req:true,v:'jazm-belegbox'},{k:'repo',l:'Privates Repo',req:true,v:'belegbox-daten'},{k:'dir',l:'Ordner im Repo (optional, z. B. belegbox)',v:(ghCfg()&&ghCfg().dir)||''},{k:'token',l:'Zugangsschlüssel (github_pat_…)',t:'password',req:true}],async(v,fail)=>{
+       const g={owner:v.owner.trim(),repo:v.repo.trim(),token:v.token.trim()};const dd=bkDir(v.dir);if(dd)g.dir=dd;
+       if(!g.owner||!g.repo||!g.token)return fail('Bitte Konto, Repo und Zugangsschlüssel ausfüllen.');
        try{const info=await ghFetch(g,'GET','');
          if(!info)throw Object.assign(new Error(),{status:404});
          if(!info.private)return fail('Dieses Repo ist öffentlich. Aus Sicherheitsgründen sichert die MyBelegBox nur in private Repos.');
@@ -1332,7 +1343,7 @@ function openMenu(){
        }catch(x){return fail(ghErrText(x))}
        db.meta=Object.assign({},db.meta,{gh:g});setGhStat({err:'',at:0,conflict:false});await save();
        openMenu();ghSync().then(()=>{if(!ghStat.err){celebrate('GitHub verbunden');toast('Automatische Sicherung ist aktiv ✓')}else openMenu()})},
-       {ok:'Verbinden & sichern',html:'<p class="ds-dlg-intro">Sichert den verschlüsselten Tresor nach jeder Änderung in ein <b>privates</b> GitHub-Repo. GitHub sieht nur verschlüsselte Daten. Zugangsschlüssel: nur für dieses Repo, mit <b>Contents: Read and write</b>.</p>'});
+       {ok:'Verbinden & sichern',html:'<p class="ds-dlg-intro">Sichert den verschlüsselten Tresor nach jeder Änderung in ein <b>privates</b> GitHub-Repo. GitHub sieht nur verschlüsselte Daten. Zugangsschlüssel: nur für dieses Repo, mit <b>Contents: Read and write</b>. Tipp: Für alle drei Boxen genügt ein Repo – trag je Box einen eigenen Ordner ein (z. B. smartbox, gesundbox, belegbox) und nutze denselben Zugangsschlüssel.</p>'});
      const ghN=s.querySelector('#ghNow');if(ghN)ghN.onclick=async()=>{await ghSync();if(!ghStat.err){buzz(10);toast('Auf GitHub gesichert ✓')}};
      const ghP=s.querySelector('#ghPull');if(ghP)ghP.onclick=async()=>{
        if(!confirm('Die Daten auf diesem Gerät durch den GitHub-Stand ersetzen?'))return;

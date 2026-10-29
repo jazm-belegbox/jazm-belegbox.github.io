@@ -1,6 +1,13 @@
-# MyBelegBox – Test-App 0.9.5.0
+# MyBelegBox – Test-App 0.10.0.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.10
+
+- **Kosten-Tachometer**: Die Fixkosten als Halbkreis aus den Kategorien. Antippen legt ein Monatsbudget fest, dann zeigt die Nadel, wie viel davon belegt ist.
+- **Kündigungs-Countdown**: In den letzten 14 Tagen vor einem Kündigungstag schrumpft ein farbiger Rand um das Datum, in den letzten 3 Tagen pulsiert er.
+- **Garantie-Ampel**: Geräte in der Liste haben links einen grünen, gelben, roten oder grauen Rand je nach Restschutz.
+- **Gemeinsam mit MySmartBox und MyGesundBox**: Darstellung hell/dunkel/automatisch, Punkt am Schloss für den Sicherungsstand, Konfetti bei besonderen Momenten, Haken im Speichern-Knopf, „Meine Boxen“ zum Wechseln und ein optionaler Ordner im Sicherungs-Repo, damit alle drei Boxen in ein Repo sichern können.
 
 ## Neu in 0.9.5
 

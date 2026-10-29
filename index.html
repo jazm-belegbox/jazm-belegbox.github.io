@@ -598,6 +598,59 @@ html.tilt .p-ok{background-image:linear-gradient(100deg,transparent 35%,var(--sh
 .ds-qrow .ds-qt b{font-size:16px;font-weight:700;overflow-wrap:anywhere}
 .ds-qrow .ds-qt small{font-size:13px;color:var(--ds-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ds-srch .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* Darstellung: Umschalter Automatisch / Hell / Dunkel */
+.ds-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;border-radius:12px;background:var(--ds-sunk)}
+.ds-seg button{all:unset;box-sizing:border-box;text-align:center;padding:9px 6px;border-radius:9px;font-family:inherit;font-size:14px;font-weight:600;color:var(--ds-muted);cursor:pointer}
+.ds-seg button[aria-checked="true"]{background:var(--ds-surface);color:var(--ds-ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.ds-seg button:focus-visible{outline:2px solid var(--ds-accent)}
+/* Feier-Effekt mit Konfetti */
+.ds-yay{position:fixed;inset:0;z-index:140;display:grid;place-items:center;pointer-events:none;overflow:hidden}
+.ds-yay-card{position:relative;background:var(--ds-surface);color:var(--ds-ink);border-radius:24px;padding:22px 28px 16px;display:grid;justify-items:center;gap:8px;min-width:150px;box-shadow:0 18px 50px rgba(0,0,0,.28);animation:dsYayIn .45s cubic-bezier(.3,1.35,.5,1) both,dsYayOut .28s ease-in 1.2s forwards}
+.ds-yay svg{width:64px;height:64px}
+.ds-yay .yc{fill:none;stroke:var(--ds-ok);stroke-width:3;stroke-dasharray:145;stroke-dashoffset:145;animation:dsInk .45s ease-out .08s forwards}
+.ds-yay .yk{fill:none;stroke:var(--ds-ok);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:34;stroke-dashoffset:34;animation:dsInk .28s ease-out .42s forwards}
+.ds-yay b{font-size:15px;font-weight:700}
+.ds-yay i{position:absolute;left:50%;top:54px;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--c);opacity:0;animation:dsSpark .65s ease-out .5s}
+.ds-yay em{position:absolute;top:-16px;left:var(--x);width:8px;height:13px;border-radius:2px;background:var(--c);transform:scale(var(--s));animation:dsFall 2.2s cubic-bezier(.25,.6,.5,1) var(--d) forwards;opacity:0}
+@keyframes dsInk{to{stroke-dashoffset:0}}
+@keyframes dsSpark{0%{opacity:1;transform:rotate(var(--a)) translateY(-30px) scale(1)}100%{opacity:0;transform:rotate(var(--a)) translateY(-64px) scale(.3)}}
+@keyframes dsYayIn{from{opacity:0;transform:scale(.6)}}
+@keyframes dsYayOut{to{opacity:0;transform:scale(.92)}}
+@keyframes dsFall{0%{opacity:1;transform:translateY(0) rotate(0) scale(var(--s))}85%{opacity:1}100%{opacity:0;transform:translateY(105vh) rotate(var(--r)) scale(var(--s))}}
+/* Entsperr-Animation */
+.ds-unl{position:fixed;z-index:130;width:0;height:0;pointer-events:none}
+.ds-unl span{position:absolute;left:0;top:0;border-radius:50%;transform:translate(-50%,-50%)}
+.ds-unl-light .glow{width:72px;height:72px;background:radial-gradient(circle,rgba(255,214,90,.95) 0%,rgba(255,196,60,.45) 45%,rgba(255,196,60,0) 72%);animation:dsGlow .7s ease-out forwards}
+.ds-unl-light .ray{width:72px;height:72px;background:conic-gradient(from 0deg,rgba(255,206,84,.55) 0 8deg,transparent 8deg 30deg,rgba(255,206,84,.55) 30deg 38deg,transparent 38deg 60deg,rgba(255,206,84,.55) 60deg 68deg,transparent 68deg 90deg);
+  -webkit-mask:radial-gradient(circle,transparent 42%,#000 44%,#000 70%,transparent 72%);mask:radial-gradient(circle,transparent 42%,#000 44%,#000 70%,transparent 72%);animation:dsRays .7s ease-out forwards}
+.ds-unl-light-ico{animation:dsLit .68s ease-out forwards}
+@keyframes dsGlow{0%{width:40px;height:40px;opacity:0}40%{opacity:1}100%{width:260px;height:260px;opacity:.9}}
+@keyframes dsRays{0%{width:60px;height:60px;opacity:0;transform:translate(-50%,-50%) rotate(-20deg)}50%{opacity:1}100%{width:230px;height:230px;opacity:.85;transform:translate(-50%,-50%) rotate(15deg)}}
+@keyframes dsLit{0%{filter:none}35%{filter:brightness(1.6) saturate(1.2) drop-shadow(0 0 14px rgba(255,205,80,.95))}100%{filter:brightness(1.25) drop-shadow(0 0 22px rgba(255,205,80,.9));transform:scale(1.06)}}
+.ds-unl-heart .ring{width:72px;height:72px;border:3px solid var(--ds-accent);opacity:0;animation:dsRing .75s ease-out forwards}
+.ds-unl-heart .r2{animation-delay:.28s}
+.ds-unl-heart-ico{animation:dsBeat .76s ease-in-out forwards}
+@keyframes dsRing{0%{width:72px;height:72px;opacity:.8}100%{width:220px;height:220px;opacity:0}}
+@keyframes dsBeat{0%{transform:scale(1)}14%{transform:scale(1.18)}28%{transform:scale(.98)}42%{transform:scale(1.13)}70%{transform:scale(1)}100%{transform:scale(1.04)}}
+/* Sicherungs-Status: Punkt am Schloss */
+.ds-lockbtn{position:relative}
+.ds-lockbtn[data-bk]:not([data-bk=""])::after{content:"";position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 2px var(--ds-surface);background:var(--ds-ok)}
+.ds-lockbtn[data-bk="warn"]:not([data-bk=""])::after{background:var(--ds-warn);animation:dsDot 2.4s ease-in-out infinite}
+.ds-lockbtn[data-bk="crit"]:not([data-bk=""])::after{background:var(--ds-crit);animation:dsDot 1.6s ease-in-out infinite}
+@keyframes dsDot{50%{transform:scale(1.35)}}
+@media (prefers-reduced-motion:reduce){.ds-lockbtn::after{animation:none!important}}
+/* Haken beim Speichern */
+.ds-saved{background:var(--ds-ok)!important;border-color:var(--ds-ok)!important;color:#fff!important;display:inline-flex!important;align-items:center;justify-content:center;gap:6px}
+.ds-saved .tk{stroke-dasharray:24;stroke-dashoffset:24;animation:dsInk .3s ease-out forwards}
+/* Wechsel zwischen den Boxen */
+.ds-boxes{display:flex;flex-direction:column;background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:14px;overflow:hidden;margin:0 0 6px}
+.ds-boxlink{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 14px;color:var(--ds-ink);text-decoration:none}
+.ds-boxlink+.ds-boxlink{border-top:1px solid var(--ds-line)}
+.ds-boxlink .ds-qt{display:grid;gap:2px;min-width:0}
+.ds-boxlink .ds-qt b{font-size:15px;font-weight:700}
+.ds-boxlink .ds-qt small{font-size:13px;color:var(--ds-muted)}
+.ds-boxlink .chev{width:20px;height:20px;color:var(--ds-muted)}
+.ds-boxico{width:36px;height:36px;border-radius:10px;display:block}
 
 /* App-spezifisch: Kopfzeile der Bereiche wie in den anderen Apps */
 .acc .at b,.accrow .at b{font-weight:800;font-size:16px}
@@ -647,9 +700,49 @@ header.top>div:last-child{flex:none;gap:6px!important}
 .sheet form>.actions:last-child .btn{min-height:42px;padding:0 16px;font-size:15px;font-weight:600;border-radius:12px}
 .sheethead h2{font-size:22px;font-weight:800;line-height:1.2}
 .field>span{font-size:13px;font-weight:700}
+/* Kosten-Tachometer */
+.gauge{all:unset;box-sizing:border-box;display:block;width:min(240px,100%);margin:10px auto 4px;cursor:pointer;position:relative;text-align:center}
+.gauge svg{display:block;width:100%;height:auto;overflow:visible}
+.gauge .gtrack{fill:none;stroke:var(--sunk);stroke-width:16;stroke-linecap:round}
+.gauge .gseg{fill:none;stroke-width:16;stroke-linecap:butt}
+.gauge .gticks line{stroke:var(--muted);stroke-width:1.5;opacity:.45}
+.gauge .gneedle{transform-origin:100px 96px;transform:rotate(var(--a));transition:transform .2s}
+.gauge .gneedle line{stroke:var(--ink);stroke-width:3.5;stroke-linecap:round}
+.gauge .gneedle circle{fill:var(--ink)}
+.gauge.over .gneedle line,.gauge.over .gneedle circle{stroke:var(--crit);fill:var(--crit)}
+.gauge .glbl{display:block;margin-top:6px;font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.gauge:not(.hasbud) .glbl{opacity:.75}
+.gauge.over .glbl{color:var(--crit)}
+.gauge:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:12px}
+.bigcost.ongauge{justify-content:center;text-align:center;flex-direction:column;align-items:center;gap:2px;position:relative}
+.gdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+@media (prefers-reduced-motion:no-preference){
+  .view.enter .gauge .gseg{animation:gSweep .9s cubic-bezier(.3,.8,.3,1) backwards;animation-delay:calc(.1s + var(--i) * .12s)}
+  .view.enter .gauge .gneedle{animation:gNeedle 1.4s cubic-bezier(.3,1.25,.45,1) .35s backwards}}
+@keyframes gSweep{from{stroke-dasharray:0 999}}
+@keyframes gNeedle{0%{transform:rotate(-90deg)}60%{transform:rotate(calc(var(--a) + 6deg))}100%{transform:rotate(var(--a))}}
+/* Kündigungs-Countdown */
+.pillwrap{display:inline-flex;align-items:center;gap:6px;justify-self:end}
+@keyframes cdIn{from{stroke-dasharray:0 100}}
+@keyframes cdPulse{50%{transform:scale(1.06)}}
+/* Garantie-Ampel in der Geräteliste */
+.row.gz-ok{box-shadow:inset 4px 0 0 var(--ok)}
+.row.gz-warn{box-shadow:inset 4px 0 0 var(--gold)}
+.row.gz-crit{box-shadow:inset 4px 0 0 var(--crit)}
+.row.gz-none{box-shadow:inset 4px 0 0 var(--line)}
+/* Countdown als schrumpfender Rand um das Datum */
+.date.cdate{position:relative;color:var(--warn)}
+.date.cdate svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.date.cdate .cdt{fill:none;stroke:transparent;stroke-width:3}
+.date.cdate .cdf{fill:none;stroke:currentColor;stroke-width:3;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.date.cdate b,.date.cdate span{position:relative}
+.date.cdate.warm{color:color-mix(in srgb,var(--warn) 50%,var(--crit))} .date.cdate.hot{color:var(--crit)}
+.date.cdate.hot b{color:var(--crit)}
+@media (prefers-reduced-motion:no-preference){.date.cdate .cdf{animation:cdIn .9s ease-out .2s backwards}.date.cdate.hot{animation:cdPulse 1.6s ease-in-out infinite}}
 
 /* ds:end */
 </style>
+<script src="ds.js" data-app="belegbox"></script>
 </head>
 <body>
 
