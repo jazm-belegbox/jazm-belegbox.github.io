@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.9.1.12';
+const APP_VERSION='0.9.2.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -1058,8 +1058,8 @@ function openForm(kind,item,camera,tpl){
     <label class="field" data-m="beginn ende"><span id="c_knL">Anderer Preis nach der Mindestlaufzeit (€, optional)</span><input id="c_kn" type="number" step="0.01" min="0" inputmode="decimal" placeholder="leer lassen, wenn der Preis gleich bleibt"></label>
     <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
     </div></details>`;
-  openSheet(head(item?'Bearbeiten':tpl?(tpl._ext?'Aus der MyGesundBox':'Vertrag kopieren'):'Neuer Eintrag')+`<form id="frm" novalidate>
-    ${tpl&&tpl._ext?`<p class="hint" style="margin-bottom:12px">Übernommen aus der <b>MyGesundBox</b>. Prüf die Angaben und füg den Kaufbeleg als Foto oder PDF hinzu.</p>`:''}${tpl&&!tpl._ext?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
+  openSheet(head(item?'Bearbeiten':tpl?(tpl._ext?'Aus der '+esc(tpl._ext.src||'MyGesundBox'):'Vertrag kopieren'):'Neuer Eintrag')+`<form id="frm" novalidate>
+    ${tpl&&tpl._ext?`<p class="hint" style="margin-bottom:12px">Übernommen aus der <b>${esc(tpl._ext.src||'MyGesundBox')}</b>. Prüf die Angaben und füg den Kaufbeleg als Foto oder PDF hinzu.</p>`:''}${tpl&&!tpl._ext?`<p class="hint">Kopie von <b>${esc(tpl.anbieter)}</b>. Vertragsnummer und Beginn sind leer bzw. auf heute gesetzt, alles andere ist übernommen.</p>`:''}
     <div class="seg"${item||tpl?' hidden':''}><button type="button" data-k="d" aria-pressed="${kind==='d'}">Gerät</button><button type="button" data-k="c" aria-pressed="${kind==='c'}">Abo / Vertrag</button></div>
     ${kind==='d'?dev:con}<p class="hint" id="err" style="color:var(--crit)" hidden></p>
     <div class="actions"><button type="submit" class="btn primary">Speichern</button><button type="button" class="btn" data-close>Abbrechen</button></div></form>`,
@@ -1717,8 +1717,9 @@ function openShareText(items,info){
 
 /* ---------- Schnellaktionen am App-Icon und Start nach dem Entsperren ---------- */
 const QS=new URLSearchParams(location.search);
+{const H=new URLSearchParams(location.hash.slice(1));for(const k of ['neu','ref'])if(H.get(k)&&!QS.get(k))QS.set(k,H.get(k))}
 let pendingAct=QS.get('aktion'),pendingShare=QS.has('geteilt'),pendingNeu=QS.get('neu'),pendingRef=QS.get('ref');
-if(location.search){try{history.replaceState(null,'',location.pathname)}catch(e){}}
+if(location.search||/^#(neu|ref)=/.test(location.hash)){try{history.replaceState(null,'',location.pathname)}catch(e){}}
 function afterUnlock(){
   setTimeout(async()=>{if(!db)return;
     let items=[];try{items=await inboxFiles()}catch(e){}
@@ -1899,24 +1900,62 @@ if('serviceWorker' in navigator){
    Die MyGesundBox schickt einen Eintrag als Link (?neu=…). Gespeichert wird nur die Verknüpfung (ext),
    die Daten bleiben in der jeweiligen App. ?ref=… öffnet einen bereits übernommenen Eintrag. */
 const GB_URL=/^https:\/\/jazm-gesundbox\.github\.io\//;
+const SB_URL=/^https:\/\/jazm-smartbox\.github\.io\//;
+/* Partner-Apps: Erkennung über die Adresse, Kennungen mit festem Präfix */
+const EXT_APPS=[
+  {src:'MyGesundBox',re:GB_URL,pre:/^mygesundbox:/,what:'Sehstärke, Gläser und Pflege',cls:'gb',ico:'<path d="M12 21s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.6-9.5 9-9.5 9z"/>'},
+  {src:'MySmartBox',re:SB_URL,pre:/^mysmartbox:/,what:'Raum, Grundriss und Bedienung',cls:'sb',ico:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>'}];
+const extApp=x=>x&&x.ext&&EXT_APPS.find(a=>a.re.test(x.ext.url||''));
 function b64urlDecode(t){t=String(t||'').replace(/-/g,'+').replace(/_/g,'/');while(t.length%4)t+='=';return td.decode(fromB64(t))}
 function findExt(ref){if(!db||!ref)return null;const d=db.devices.find(x=>x.ext&&x.ext.ref===ref);if(d)return['d',d];const c=db.contracts.find(x=>x.ext&&x.ext.ref===ref);return c?['c',c]:null}
-function extBlock(x){if(!x||!x.ext||!GB_URL.test(x.ext.url||''))return '';
-  return `<a class="extlink" href="${esc(x.ext.url)}" target="_blank" rel="noopener"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-4.4-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 6c-2.5 4.6-9.5 9-9.5 9z"/></svg></span><span class="at"><b>In der MyGesundBox öffnen</b><small>${esc(x.ext.what||'Sehstärke, Gläser und Pflege')}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></a>`}
+function extBlock(x){const a=extApp(x);if(!a)return '';
+  return `<a class="extlink ${a.cls}" href="${esc(x.ext.url)}" target="_blank" rel="noopener"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${a.ico}</svg></span><span class="at"><b>In der ${a.src} öffnen</b><small>${esc(x.ext.what||a.what)}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></a>`}
+/* Ähnliche vorhandene Geräte finden (z. B. „TV“ ↔ „Fernseher Wohnzimmer“) */
+const SYN=[['tv','fernseher','fernseh','television'],['kühlschrank','kuehlschrank'],['waschmaschine','wama'],['trockner','wäschetrockner'],['saugroboter','saug','robot','staubsauger'],['lautsprecher','speaker','sonos','echo','alexa'],['router','fritzbox','fritz!box'],['kamera','cam','arlo']];
+const nrm=t=>String(t||'').toLowerCase().replace(/[^a-z0-9äöüß ]/g,' ').replace(/\s+/g,' ').trim();
+function likeScore(d,o){const a=nrm(o.name),b=nrm(d.name);if(!a||!b)return 0;let sc=0;
+  if(a===b)sc+=10;else if(b.includes(a)||a.includes(b))sc+=6;
+  const wa=a.split(' '),wb=b.split(' ');sc+=wa.filter(w=>w.length>2&&wb.includes(w)).length*3;
+  for(const g of SYN)if(g.some(w=>a.includes(w))&&g.some(w=>b.includes(w)))sc+=5;
+  if(o.raum&&d.raum&&nrm(o.raum)===nrm(d.raum))sc+=2;
+  return sc}
 function openExternal(neu,ref){
   try{
     if(ref){const f=findExt(ref);if(f){tab=f[0]==='d'?'geraete':'vertraege';render();openDetail(f[0],f[1].id)}else toast('Dieser Eintrag ist noch nicht in der MyBelegBox.');return}
-    const o=JSON.parse(b64urlDecode(neu));if(!o||!o.ref||!/^mygesundbox:/.test(o.ref))throw new Error('format');
-    const f=findExt(o.ref);if(f){tab=f[0]==='d'?'geraete':'vertraege';render();openDetail(f[0],f[1].id);toast('Ist schon in der MyBelegBox.');return}
-    const ext={src:'MyGesundBox',ref:String(o.ref),url:GB_URL.test(o.url||'')?String(o.url):'',what:String(o.what||'')};
+    const o=JSON.parse(b64urlDecode(neu));const app=o&&o.ref&&EXT_APPS.find(a=>a.pre.test(o.ref));if(!app)throw new Error('format');
+    const f=findExt(o.ref);if(f){tab=f[0]==='d'?'geraete':'vertraege';render();openDetail(f[0],f[1].id);toast('Ist schon mit der MyBelegBox verknüpft.');return}
+    const ext={src:app.src,ref:String(o.ref),url:app.re.test(o.url||'')?String(o.url):'',what:String(o.what||'')};
     const str=v=>v==null?'':String(v).slice(0,300),num=v=>{const n=parseFloat(v);return isFinite(n)&&n>=0?n:0};
     if(o.k==='c'){
       openForm('c',null,false,{_ext:ext,anbieter:str(o.anbieter),kategorie:'Gesundheit',kosten:num(o.kosten),intervall:Number(o.intervall)||1,modus:['beginn','ende','offen'].includes(o.modus)?o.modus:'offen',
         laufzeit:Number(o.laufzeit)||1,verl:Number(o.verl)||1,frist:Number(o.frist)||0,notiz:str(o.notiz),logo:''});
-    }else{
-      openForm('d',null,false,{_ext:ext,name:str(o.name)||'Brille',kategorie:'Gesundheit',raum:str(o.raum),hersteller:str(o.hersteller),modell:str(o.modell),
-        kauf:/^\d{4}-\d{2}-\d{2}$/.test(o.kauf||'')?o.kauf:iso(T0),preis:num(o.preis),haendler:str(o.haendler),garantieMonate:Number(o.garantieMonate)||0,nachweis:'keiner',notiz:str(o.notiz)});
+      return;
     }
-  }catch(e){toast('Der Link aus der MyGesundBox ließ sich nicht lesen.')}
+    const tpl={_ext:ext,name:str(o.name)||(app.src==='MyGesundBox'?'Brille':'Gerät'),kategorie:DEV_KAT.includes(o.kategorie)?o.kategorie:(app.src==='MyGesundBox'?'Gesundheit':'Technik'),raum:str(o.raum),hersteller:str(o.hersteller),modell:str(o.modell),
+      kauf:/^\d{4}-\d{2}-\d{2}$/.test(o.kauf||'')?o.kauf:iso(T0),preis:num(o.preis),haendler:str(o.haendler),garantieMonate:Number(o.garantieMonate)||0,nachweis:'keiner',notiz:str(o.notiz)};
+    const free=db.devices.filter(d=>!d.ext);
+    const cand=free.map(d=>[likeScore(d,o),d]).filter(x=>x[0]>=5).sort((a,b)=>b[0]-a[0]).map(x=>x[1]).slice(0,4);
+    if(app.src==='MySmartBox'&&free.length)return openLinkChooser(o,ext,tpl,cand,free);
+    openForm('d',null,false,tpl);
+  }catch(e){toast('Der Link aus der anderen App ließ sich nicht lesen.')}
 }
+/* Gerät aus der MySmartBox: mit vorhandenem Gerät verknüpfen oder neu anlegen */
+function openLinkChooser(o,ext,tpl,cand,free){
+  const row=d=>`<button type="button" class="row" data-li="${d.id}">${tileFor(d)}<div class="main"><div class="t">${esc(d.name)}</div><div class="s">${esc([d.hersteller,d.raum].filter(Boolean).join(' · '))}</div></div><span class="pill p-none">Verknüpfen</span></button>`;
+  openSheet(head('Aus der MySmartBox')+`
+    <p class="hint" style="margin-bottom:14px"><b>${esc(o.name||'Gerät')}</b>${o.raum?' · '+esc(o.raum):''}. Gibt es dieses Gerät hier schon? Dann verknüpfe es – Beleg und Garantie bleiben hier, Raum und Bedienung in der MySmartBox.</p>
+    ${cand.length?`<div class="label" style="margin-bottom:8px">Passt wahrscheinlich</div><div class="list">${cand.map(row).join('')}</div>`:''}
+    <div class="label" style="margin:16px 0 8px">${cand.length?'Oder anderes Gerät':'Vorhandenes Gerät wählen'}</div>
+    <label class="field srchf"><span class="sr">Gerät suchen</span><input id="l_q" type="search" placeholder="Gerät suchen …" autocomplete="off"></label>
+    <div class="list" id="l_list" style="margin-top:10px"></div>
+    <div class="actions" style="margin-top:16px"><button type="button" class="btn primary" id="l_new">Als neues Gerät anlegen</button></div>`,
+  s=>{const L=s.querySelector('#l_list'),q=s.querySelector('#l_q');
+    const bind=root=>root.querySelectorAll('[data-li]').forEach(b=>b.onclick=async()=>{const d=db.devices.find(x=>x.id===b.dataset.li);if(!d)return;
+      d.ext=ext;db.meta=Object.assign({},db.meta,{dirty:(db.meta&&db.meta.dirty||0)+1});await save();closeSheet();tab='geraete';render();openDetail('d',d.id);buzz([10,40,10]);toast('Verknüpft mit der MySmartBox.')});
+    const draw=()=>{const t=nrm(q.value);const hit=t?free.filter(d=>nrm(d.name+' '+(d.hersteller||'')+' '+(d.raum||'')).includes(t)).slice(0,25):[];
+      L.innerHTML=t?(hit.length?hit.map(row).join(''):'<div class="empty">Nichts gefunden.</div>'):'';bind(L)};
+    bind(s);q.addEventListener('input',draw);
+    s.querySelector('#l_new').onclick=()=>{closeSheet();setTimeout(()=>openForm('d',null,false,tpl),motion()?320:0)}});
+}
+/* Verknüpfung lösen (im Bearbeiten-Formular nicht nötig: über die Detailansicht) */
 })();

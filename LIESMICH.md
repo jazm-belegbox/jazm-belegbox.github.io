@@ -1,6 +1,11 @@
-# MyBelegBox – Test-App 0.9.1.12
+# MyBelegBox – Test-App 0.9.2.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.9.2
+
+- **Verbindung zur MySmartBox**: Im Gerät der MySmartBox „In der MyBelegBox“ antippen. Gibt es das Gerät hier schon (z. B. „TV“ ↔ „Fernseher Wohnzimmer“), schlägt die MyBelegBox es zum Verknüpfen vor, sonst wird es neu angelegt. Übertragen werden nur Name und Raum, gespeichert nur die Verknüpfung (`ext`). Im Gerät führt „In der MySmartBox öffnen“ zurück.
+- Links aus den anderen Boxen kommen über den Teil hinter `#` an, der nicht an den Server geschickt wird (`?neu=…` funktioniert weiterhin).
 
 ## Neu in 0.9.1
 
