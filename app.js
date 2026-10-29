@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.9.2.0';
+const APP_VERSION='0.9.3.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -90,9 +90,9 @@ const ghErrText=e=>e&&e.conflict?'Im Repo liegt ein anderer Tresor. Öffne „Da
   :e&&e.status===422?'GitHub hat die Datei abgelehnt (zu groß?).'
   :'Keine Verbindung zu GitHub. Es wird später erneut versucht.';
 function ghStatusText(){
-  if(ghBusy)return '<span class="spin"></span> Wird gesichert …';
+  if(ghBusy)return '⏳ Wird gesichert …';
   if(ghStat.err)return `<span style="color:var(--crit)">${esc(ghStat.err)}</span>`;
-  if(ghStat.at){const m=Math.round((Date.now()-ghStat.at)/60000);return `Zuletzt gesichert ${m<1?'gerade eben':m<60?'vor '+m+' Min.':m<1440?'vor '+Math.round(m/60)+' Std.':'am '+fmtD(new Date(ghStat.at))}.`}
+  if(ghStat.at){const m=Math.round((Date.now()-ghStat.at)/60000);return `✓ Zuletzt gesichert ${m<1?'gerade eben':m<60?'vor '+m+' Min.':m<1440?'vor '+Math.round(m/60)+' Std.':'am '+fmtD(new Date(ghStat.at))}.`}
   return 'Noch nicht gesichert.';
 }
 async function ghRemoteVault(g){
@@ -310,31 +310,29 @@ function showLock(closing){
   const bio=!setup&&vault.bio&&bioPossible();
   L.innerHTML=`<div class="lock"><form class="lockcard" id="lf" novalidate>
     ${VAULT}
-    ${setup?`<h2>Tresor einrichten</h2>
-      <p>Alle Einträge und Fotos werden mit deinem Passwort verschlüsselt, bevor sie gespeichert werden. Ohne Passwort sind sie nicht lesbar.</p>
-      <label class="field"><span>Passwort (mind. 10 Zeichen)</span><input id="lp1" type="password" autocomplete="new-password" minlength="10"></label>
-      <label class="field"><span>Passwort wiederholen</span><input id="lp2" type="password" autocomplete="new-password"></label>
+    ${setup?`<h2>MyBelegBox</h2>
+      <p>Lege ein Passwort fest (mind. 10 Zeichen). Ohne Passwort sind die Daten nicht wiederherstellbar.</p>
+      <label class="field"><span>Passwort (mind. 10 Zeichen)</span><input id="lp1" type="password" placeholder="Passwort" autocomplete="new-password" minlength="10"></label>
+      <label class="field"><span>Passwort wiederholen</span><input id="lp2" type="password" placeholder="Passwort wiederholen" autocomplete="new-password"></label>
       ${bootInfo.broken?`<div class="note" style="background:var(--crit-soft)"><b>Achtung:</b> Auf diesem Gerät liegt ein Tresor, der sich nicht lesen lässt. Speichere ihn zuerst, bevor du neu anfängst.
         <button type="button" class="linkbtn" id="lraw" style="display:block;color:var(--crit)">Beschädigten Tresor als Datei speichern</button></div>`:''}
       ${bootInfo.orphans?`<div class="note" style="background:var(--crit-soft)"><b>Achtung:</b> Auf diesem Gerät liegen noch ${bootInfo.orphans>1?bootInfo.orphans+' verschlüsselte Dokumente':'ein verschlüsseltes Dokument'}, aber kein Tresor. Hast du eine Sicherung, stell sie unten wieder her, statt neu anzufangen.</div>`:''}
-      ${bootInfo.broken||bootInfo.orphans?'<label class="check"><input id="lnew" type="checkbox"> Ich möchte trotzdem einen neuen, leeren Tresor anlegen</label>':''}
-      <div class="note">Es gibt keine Wiederherstellung. Wer das Passwort vergisst, verliert die Daten. Notier es dir an einem sicheren Ort, z. B. im Passwortmanager.</div>`
-    :`<h2>MyBelegBox ist gesperrt</h2><p>${bio?'Entsperre mit deinem Fingerabdruck oder deinem Passwort.':'Gib dein Passwort ein, um deine Daten zu entschlüsseln.'}</p>
-      ${bio?`<button type="button" class="btn primary bio" id="lbio">${FINGER}Mit Fingerabdruck entsperren</button><div class="or"><span>oder mit Passwort</span></div>`:''}
-      <label class="field"><span>Passwort</span><input id="lp1" type="password" autocomplete="current-password"></label>`}
+      ${bootInfo.broken||bootInfo.orphans?'<label class="check"><input id="lnew" type="checkbox"> Ich möchte trotzdem einen neuen, leeren Tresor anlegen</label>':''}`
+    :`<h2>MyBelegBox</h2><p>Deine Belege und Verträge, verschlüsselt auf diesem Gerät.</p>
+      <label class="field"><span>Passwort</span><input id="lp1" type="password" placeholder="Passwort" autocomplete="current-password"></label>`}
     <p class="hint" id="lerr" style="color:var(--crit)" hidden></p>
-    <button type="submit" class="btn${bio?'':' primary'}" id="lgo">${setup?'Tresor anlegen':'Entsperren'}</button>
+    <button type="submit" class="btn primary" id="lgo">${setup?'MyBelegBox anlegen':'Entsperren'}</button>
+    ${bio?`<button type="button" class="btn bio" id="lbio">${FINGER}Mit Fingerabdruck entsperren</button>`:''}
     ${setup?`<label class="linkbtn" style="cursor:pointer">Neues Handy? Sicherung wiederherstellen<input id="lrestore" type="file" accept=".belegbox,application/json" hidden></label>
       <button type="button" class="linkbtn" id="lghOpen">Aus GitHub wiederherstellen</button>
       <div class="ghbox" id="lgh" hidden>
-        <div class="label">Wiederherstellen aus GitHub</div>
-        <div class="grid2"><label class="field"><span>Konto / Organisation</span><input id="lgo_o" value="jazm-belegbox" autocomplete="off" autocapitalize="off"></label>
-          <label class="field"><span>Repo</span><input id="lgo_r" value="belegbox-daten" autocomplete="off" autocapitalize="off"></label></div>
+        <label class="field"><span>Konto / Organisation</span><input id="lgo_o" value="jazm-belegbox" autocomplete="off" autocapitalize="off"></label>
+        <label class="field"><span>Repo</span><input id="lgo_r" value="belegbox-daten" autocomplete="off" autocapitalize="off"></label>
         <label class="field"><span>Zugangsschlüssel (github_pat_…)</span><input id="lgo_t" type="password" autocomplete="off"></label>
         <p class="hint" id="lgo_msg" hidden></p>
         <button type="button" class="btn primary" id="lgo_go">Sicherung von GitHub laden</button></div>`
       :'<button type="button" class="linkbtn" id="lreset">Passwort vergessen? Tresor zurücksetzen</button>'}
-    <p class="hint" style="text-align:center">Version ${APP_VERSION}${IS_TEST?' · <b style="color:var(--warn)">Test-App, eigener Speicher</b>':''}</p>
+    <p class="hint lver">Version ${APP_VERSION}${IS_TEST?' · <b style="color:var(--warn)">Test-App, eigener Speicher</b>':''}</p>
   </form></div>`;
   const f=L.querySelector('#lf'),err=L.querySelector('#lerr'),go=L.querySelector('#lgo'),V=L.querySelector('.vault');
   // Beim Sperren schließt sich die Tresortür
@@ -343,7 +341,7 @@ function showLock(closing){
   const shake=()=>{buzz([30,50,30]);if(!motion())return;
     [V,...L.querySelectorAll('.field')].forEach(el=>{el.classList.remove('no');void el.offsetWidth;el.classList.add('no')});
     setTimeout(()=>L.querySelectorAll('.no').forEach(el=>el.classList.remove('no')),450)};
-  const fail=m=>{V.classList.remove('busy');err.textContent=m;err.hidden=false;go.disabled=false;go.textContent=setup?'Tresor anlegen':'Entsperren';shake()};
+  const fail=m=>{V.classList.remove('busy');err.textContent=m;err.hidden=false;go.disabled=false;go.textContent=setup?'MyBelegBox anlegen':'Entsperren';shake()};
   f.addEventListener('submit',async e=>{e.preventDefault();err.hidden=true;
     const p1=L.querySelector('#lp1').value;
     if(!window.crypto||!crypto.subtle)return fail('Dieser Browser unterstützt keine Verschlüsselung. Öffne die Seite in einem aktuellen Browser.');
@@ -892,7 +890,7 @@ function closeSheet(anim){
   layerClosed();setTimeout(()=>{if(tok===sheetTok)root.innerHTML=''},280);
 }
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!document.getElementById('viewer').hidden)closeViewer();else if(fanOpen)setFan(false);else if(root.firstElementChild)closeSheet()});
-const head=t=>`<div class="sheethead"><h2>${t}</h2><button type="button" class="x" data-close aria-label="Schließen">✕</button></div>`;
+const head=t=>`<div class="sheethead"><h2>${t}</h2><button type="button" class="icobtn" data-close aria-label="Schließen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
 
 function openDetail(kind,id,from){
   if(kind==='d'){
@@ -1181,37 +1179,33 @@ let menuAcc=null;
 /* ---------- App-Update: Zip-Paket aus der App ins GitHub-Repo laden ----------
    Ein Ablauf im Repo (.github/workflows/paket.yml) entpackt das Paket, prüft Version und Cache,
    übernimmt die Dateien und veröffentlicht. Der Schlüssel liegt verschlüsselt im Tresor (db.meta.upd). */
-let UPD='',updEdit=false,updBusy=false;
+let UPD='',updBusy=false;
 const defaultRepo=()=>{const h=location.hostname;return h.endsWith('.github.io')?h.split('.')[0]+'/'+h:''};
 const updCfg=()=>{const u=db&&db.meta&&db.meta.upd;if(!u)return null;const [owner,repo]=u.repo.split('/');return {owner,repo,token:u.token}};
 function setUpd(html){UPD=html;const el=document.getElementById('updStatus');if(el){el.innerHTML=html;el.hidden=!html}}
 const updErr=e=>e&&e.status===401?'Der Zugangsschlüssel ist ungültig oder abgelaufen.':e&&e.status===403?'Keine Berechtigung. Der Schlüssel braucht „Contents: Read and write“ und „Actions: Read“ für dieses Repo.'
   :e&&e.status===404?'Repo nicht gefunden oder kein Zugriff.':e&&e.status===422?'GitHub hat die Datei abgelehnt (zu groß?).':'Keine Verbindung zu GitHub. Prüfe die Internetverbindung.';
 function bindUpd(s){
-  const go=s.querySelector('#up_go');
-  if(go)go.onclick=async()=>{const repo=s.querySelector('#up_repo').value.trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,''),token=s.querySelector('#up_tok').value.trim();
-    if(!/^[\w.-]+\/[\w.-]+$/.test(repo)||!token){setUpd('❌ Bitte Repo im Format „Besitzer/Name“ und den Zugangsschlüssel eintragen.');return}
-    go.disabled=true;setUpd('⏳ Prüfe Zugang …');
+  const ch=s.querySelector('#up_chg');
+  if(ch)ch.onclick=()=>dsForm('App-Update verbinden',[{k:'repo',l:'Repo (Besitzer/Name)',req:true,v:db.meta&&db.meta.upd?db.meta.upd.repo:defaultRepo()},{k:'token',l:'Zugangsschlüssel (github_pat_…)',t:'password',req:true}],async(v,fail)=>{
+    const repo=v.repo.trim().replace(/^https:\/\/github\.com\//,'').replace(/\/$/,''),token=v.token.trim();
+    if(!/^[\w.-]+\/[\w.-]+$/.test(repo))return fail('Bitte das Repo im Format „Besitzer/Name“ eintragen.');
     try{const [owner,name]=repo.split('/');const info=await ghFetch({owner,repo:name,token},'GET','');
       if(!info)throw Object.assign(new Error(),{status:404});
-      if(info.permissions&&info.permissions.push===false){go.disabled=false;setUpd('❌ Der Schlüssel darf in dieses Repo nicht schreiben. Setze „Contents“ auf „Read and write“.');return}
+      if(info.permissions&&info.permissions.push===false)return fail('Der Schlüssel darf in dieses Repo nicht schreiben. Setze „Contents“ auf „Read and write“.');
       const wf=await ghFetch({owner,repo:name,token},'GET','/contents/.github/workflows/paket.yml').catch(()=>null);
-      db.meta=Object.assign({},db.meta,{upd:{repo,token}});await save();updEdit=false;
+      db.meta=Object.assign({},db.meta,{upd:{repo,token}});await save();
       setUpd(wf?'✅ Verbunden. Du kannst jetzt Update-Pakete hochladen.':'⚠️ Verbunden, aber im Repo fehlt <b>.github/workflows/paket.yml</b>. Ohne diesen Ablauf werden Pakete nicht entpackt.');
-      buzz(10);openMenu()}
-    catch(x){go.disabled=false;setUpd('❌ '+esc(updErr(x)))}};
-  const cn=s.querySelector('#up_cancel');if(cn)cn.onclick=()=>{updEdit=false;setUpd('');openMenu()};
-  const ch=s.querySelector('#up_chg');if(ch)ch.onclick=()=>{updEdit=true;setUpd('');openMenu()};
-  const off=s.querySelector('#up_off');if(off){let armed=false;off.onclick=()=>{if(!armed){armed=true;off.classList.add('danger','sure');off.textContent='Wirklich trennen?';return}
-    const m=Object.assign({},db.meta);delete m.upd;db.meta=m;save();setUpd('');openMenu();toast('App-Update getrennt. Den Schlüssel kannst du auf GitHub löschen.')}}
+      buzz(10);toast('GitHub verbunden ✓');openMenu()}
+    catch(x){return fail(updErr(x))}},
+    {ok:'Prüfen & verbinden',html:'<p class="ds-dlg-intro">Dafür brauchst du einen eigenen Fine-grained-Zugangsschlüssel nur für das App-Repo mit den Rechten <b>Contents: Read and write</b> und <b>Actions: Read</b>. Er wird verschlüsselt im Tresor gespeichert. Der Schlüssel der Datensicherung reicht dafür nicht.</p>'});
+  const off=s.querySelector('#up_off');if(off)off.onclick=()=>{if(!confirm('GitHub-Verbindung für Updates entfernen? Den Schlüssel kannst du danach auf GitHub löschen.'))return;
+    const m=Object.assign({},db.meta);delete m.upd;db.meta=m;save();setUpd('');openMenu();toast('App-Update getrennt.')};
   const inp=s.querySelector('#up_in');
   if(inp)inp.addEventListener('change',()=>{const f=inp.files[0];inp.value='';if(!f)return;
     if(!/\.zip$/i.test(f.name)){setUpd('❌ Bitte eine .zip-Datei wählen.');return}
     if(f.size>50e6){setUpd('❌ Das Paket ist größer als 50 MB.');return}
-    setUpd(`<b>${esc(f.name)}</b> (${fmtSize(f.size)}) hochladen und veröffentlichen?<div class="actions" style="margin-top:8px"><button type="button" class="btn primary" id="up_yes">Hochladen</button><button type="button" class="btn" id="up_no">Abbrechen</button></div>`);
-    const st=document.getElementById('updStatus');
-    st.querySelector('#up_no').onclick=()=>setUpd('');
-    st.querySelector('#up_yes').onclick=()=>updUpload(f)});
+    if(confirm(`„${f.name}“ (${fmtSize(f.size)}) ins Repo hochladen und veröffentlichen?`))updUpload(f)});
 }
 async function updUpload(file){
   const g=updCfg();if(!g||updBusy)return;updBusy=true;
@@ -1246,128 +1240,128 @@ async function updWatch(g,sha){
   while(Date.now()-t1<5*60e3){
     await wait(10000);
     try{if(swReg){await swReg.update();if(swReg.waiting||swReg.installing){
-      setUpd('🎉 Die neue Version ist online. <button type="button" class="btn primary" id="up_now" style="margin-left:6px;padding:6px 12px">Jetzt aktualisieren</button>');
+      setUpd('🎉 Die neue Version ist online.<div class="ds-acts"><button type="button" class="ds-btn pri" id="up_now">Jetzt neu laden</button></div>');
       const b=document.getElementById('up_now');if(b)b.onclick=()=>{const w=swReg.waiting||swReg.installing;saving.then(()=>w&&w.postMessage('SKIP_WAITING'))};
       celebrate('Update online');return}}}catch(e){}
   }
   setUpd('✅ Paket übernommen. GitHub braucht noch etwas – die App meldet sich mit „Neue Version verfügbar“, sobald sie online ist.'+link);
 }
 const relTime=t=>{const m=Math.round((Date.now()-t)/6e4);return m<1?'gerade eben':m<60?'vor '+m+' Min.':m<1440?'vor '+Math.round(m/60)+' Std.':'vor '+Math.round(m/1440)+' Tagen'};
+/* Ein Bereich im Blatt „Daten & Sicherheit“ – gleicher Aufbau wie in MySmartBox und MyGesundBox */
+const MI={lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',down:'<path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/>',
+  bell:'<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/>',star:'<path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.2l5.9-.9z"/>',
+  cal:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',pkg:'<path d="M21 8l-9-5-9 5 9 5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/>',list:'<path d="M4 6h16M4 12h16M4 18h10"/>'};
+const mIco=k=>`<span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${MI[k]}</svg></span>`;
+const mChev=r=>`<svg class="chev${r?' r':''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="${r?'M9 6l6 6-6 6':'M6 9l6 6 6-6'}"/></svg>`;
+const mAcc=(k,ic,t,sub,body,force)=>`<details class="acc" data-acc="${k}"${menuAcc===k||force?' open':''}><summary>${mIco(ic)}<span class="at"><b>${t}</b><small>${sub}</small></span>${mChev()}</summary><div class="accb">${body}</div></details>`;
 function openMenu(){
+  const g=ghCfg(),bio=!!(vmeta&&vmeta.bio),lb=db.meta&&db.meta.lastBackup,u=db.meta&&db.meta.upd;
   openSheet(head('Daten & Sicherheit')+`
     <div class="secline"><svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
-      Verschlüsselt mit AES-256${vmeta&&vmeta.bio?' · Fingerabdruck an':''} · sperrt nach 5 Min. ohne Eingabe oder 1 Min. im Hintergrund</div>
-    <p class="hint" style="margin-bottom:14px">${ghCfg()?'Deine Daten liegen verschlüsselt in diesem Browser und als verschlüsselte Sicherung in deinem privaten GitHub-Repo. Sonst wird nichts gesendet.':'Deine Daten liegen nur verschlüsselt in diesem Browser und werden nirgendwohin gesendet.'} Dein Passwort wird nicht gespeichert.</p>
-<details class="acc" data-acc="sicher"${menuAcc==='sicher'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span><span class="at"><b>Sicherheit</b><small>Passwort${vmeta&&vmeta.bio?' · Fingerabdruck an':' · Fingerabdruck aus'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    <form id="pwf" novalidate style="margin-bottom:18px">
-      <div class="label">Passwort ändern</div>
-      <label class="field"><span>Aktuelles Passwort</span><input id="pw0" type="password" autocomplete="current-password"></label>
-      <div class="grid2"><label class="field"><span>Neues Passwort</span><input id="pw1" type="password" autocomplete="new-password"></label>
-        <label class="field"><span>Wiederholen</span><input id="pw2" type="password" autocomplete="new-password"></label></div>
-      <p class="hint" id="pwerr" style="color:var(--crit)" hidden></p>
-      <div class="actions"><button type="submit" class="btn" id="pwgo">Passwort ändern</button></div>
-    </form>
-    ${bioPossible()?`<div class="label" style="margin-bottom:8px">Fingerabdruck</div>
-    <p class="hint" style="margin-bottom:10px">${vmeta&&vmeta.bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die MyBelegBox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „MyBelegBox“ in deinem Passwortmanager angelegt.'}</p>
-    <div class="actions" style="margin-bottom:6px"><button type="button" class="btn${vmeta&&vmeta.bio?'':' primary'}" id="bioBtn">${vmeta&&vmeta.bio?'Ausschalten':'Einschalten'}</button></div>
-    <p class="hint" id="bioMsg" hidden></p><div style="height:12px"></div>`:''}
-</div></details><details class="acc" data-acc="gh"${menuAcc==='gh'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 19h14"/></svg></span><span class="at"><b>Sicherung</b><small>${ghCfg()?(ghStat.err?'GitHub: Problem – bitte ansehen':'GitHub '+(ghStat.at?'✓ '+relTime(ghStat.at):'verbunden')):'GitHub aus'}${db.meta&&db.meta.lastBackup?' · Datei '+fmtD(parse(db.meta.lastBackup)):' · keine Datei'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    <div class="label" style="margin:12px 0 8px">Automatisch in GitHub</div>
-    ${ghCfg()?`<p class="hint" style="margin-bottom:6px">Nach jeder Änderung landet der verschlüsselte Tresor in <b>${esc(db.meta.gh.owner)}/${esc(db.meta.gh.repo)}</b>. GitHub sieht nur verschlüsselte Daten.</p>
-      <p class="hint" id="ghStatus" style="margin-bottom:10px;display:flex;gap:8px;align-items:center">${ghStatusText()}</p>
-      ${ghStat.conflict?`<div class="note" style="background:var(--crit-soft);margin-bottom:10px">Im Repo liegt ein anderer Tresor (z. B. von einem früheren Gerät). Er bleibt in der Versionsgeschichte von GitHub erhalten, wenn du ihn ersetzt.
-        <div class="actions" style="margin-top:8px"><button type="button" class="btn primary" id="ghPull">Stattdessen den GitHub-Stand laden</button><button type="button" class="btn danger" id="ghForce">Durch diesen Tresor ersetzen</button></div></div>`:''}
-      <div class="actions" style="margin-bottom:18px"><button type="button" class="btn primary" id="ghNow">Jetzt sichern</button><button type="button" class="btn" id="ghOff">Trennen</button></div>`
-    :`<p class="hint" style="margin-bottom:10px">Sichert den verschlüsselten Tresor und alle Dokumente nach jeder Änderung in ein <b>privates</b> GitHub-Repo – auch wenn Browserdaten gelöscht werden, bleibt alles erhalten.</p>
-      <div class="grid2"><label class="field"><span>Konto / Organisation</span><input id="gh_o" value="jazm-belegbox" autocomplete="off" autocapitalize="off"></label>
-        <label class="field"><span>Repo</span><input id="gh_r" value="belegbox-daten" autocomplete="off" autocapitalize="off"></label></div>
-      <label class="field" style="margin-top:12px"><span>Zugangsschlüssel (github_pat_…)</span><input id="gh_t" type="password" autocomplete="off"></label>
-      <p class="hint" id="gh_msg" hidden></p>
-      <div class="actions" style="margin:10px 0 18px"><button type="button" class="btn primary" id="gh_go">Verbinden & sichern</button></div>`}
-    <div class="label" style="margin:4px 0 8px;padding-top:14px;border-top:1px solid var(--line)">Sicherungsdatei</div>
-    <p class="hint" style="margin-bottom:10px">Zusätzlich oder statt GitHub: eine Datei, die du selbst ablegst. Sie ist mit deinem aktuellen Passwort verschlüsselt und enthält auch alle PDFs und Dokumente. ${db.meta&&db.meta.lastBackup?'Letzte Sicherung: '+fmtD(parse(db.meta.lastBackup))+'.':'Bisher keine Sicherung.'}</p>
-    <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="bkGo">Sicherung erstellen</button>
-      <label class="btn" style="cursor:pointer">Sicherung laden<input id="bkIn" type="file" accept=".belegbox,application/json" hidden></label></div>
-    <p class="hint" id="bkMsg" hidden></p>
-    <div id="bkConfirm" hidden style="margin:8px 0"><p class="hint" style="color:var(--crit);margin-bottom:8px">Die Daten auf diesem Gerät werden durch die Sicherung ersetzt.</p>
-      <div class="actions"><button type="button" class="btn danger sure" id="bkYes">Ersetzen</button><button type="button" class="btn" id="bkNo">Abbrechen</button></div></div>
-    <p class="hint" style="margin:6px 0 18px">${persisted===true?'Dauerhafter Speicher ist aktiv.':persisted===false?'Der Browser hat dauerhaften Speicher nicht zugesagt. Installiere die App auf dem Startbildschirm und sichere regelmäßig.':''}</p>
-</div></details><details class="acc" data-acc="erin"${menuAcc==='erin'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21h4"/></svg></span><span class="at"><b>Erinnerungen</b><small>${db.meta&&db.meta.remind?'an':'aus'}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    ${'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="hint" style="margin-bottom:10px">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die MyBelegBox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
-      <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="btn" id="rmOff">Ausschalten</button></div>`
-    :`<p class="hint" style="margin-bottom:10px">Die MyBelegBox meldet sich, wenn in den nächsten 14 Tagen eine Kündigungsfrist oder Garantie abläuft – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
-      <div class="actions" style="margin-bottom:6px"><button type="button" class="btn primary" id="rmOn">Einschalten</button></div><p class="hint" id="rmMsg" hidden></p><div style="height:12px"></div>`):''}
-</div></details>
-    <button type="button" class="accrow" id="revM"><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.2l5.9-.9z"/></svg></span><span class="at"><b>Jahresrückblick ${reviewYear()}</b><small>${T0.getMonth()<11&&reviewYear()===T0.getFullYear()?'bis heute ansehen':'ansehen'}</small></span><svg class="chev r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
-    <details class="acc" data-acc="__dummy" hidden><summary></summary><div>
-</div></details><details class="acc" data-acc="kal"${menuAcc==='kal'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span><span class="at"><b>Kalender</b><small>Fristen als Termine exportieren</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    <p class="hint" style="margin-bottom:10px">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
-    <label class="check" style="margin-bottom:10px"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
-    <div class="actions" style="margin-bottom:18px"><button type="button" class="btn" id="icsGo">Fristen in Kalender exportieren</button></div>
-</div></details><details class="acc" data-acc="upd"${menuAcc==='upd'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5z"/><path d="M3 8v8l9 5 9-5V8M12 13v8"/></svg></span><span class="at"><b>App-Update</b><small>Version ${APP_VERSION}${db.meta&&db.meta.upd?' · GitHub verbunden':''}</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    ${db.meta&&db.meta.upd&&!updEdit?`<p class="hint" style="margin:12px 0 10px">Verbunden mit <b>${esc(db.meta.upd.repo)}</b>. Lade hier das Zip-Paket einer neuen Version hoch – GitHub entpackt es, prüft die Versionsnummer und veröffentlicht es. Danach erscheint „Neue Version verfügbar“.</p>
-      <div class="actions"><label class="btn primary" style="cursor:pointer">Update-Zip hochladen<input id="up_in" type="file" accept=".zip,application/zip" hidden></label><button type="button" class="btn" id="up_chg">Verbindung ändern</button><button type="button" class="btn" id="up_off">Trennen</button></div>`
-    :`<p class="hint" style="margin:12px 0 10px">Neue Versionen als Zip direkt aus der App veröffentlichen. Dafür brauchst du einen eigenen Fine-grained-Zugangsschlüssel nur für das App-Repo mit den Rechten <b>Contents: Read and write</b> und <b>Actions: Read</b>. Er wird verschlüsselt im Tresor gespeichert. Der Schlüssel der Datensicherung reicht dafür nicht.</p>
-      <label class="field"><span>Repo (Besitzer/Name)</span><input id="up_repo" value="${esc(db.meta&&db.meta.upd?db.meta.upd.repo:defaultRepo())}" autocomplete="off" autocapitalize="off"></label>
-      <label class="field" style="margin-top:10px"><span>Zugangsschlüssel (github_pat_…)</span><input id="up_tok" type="password" autocomplete="off"></label>
-      <div class="actions" style="margin-top:10px"><button type="button" class="btn primary" id="up_go">Prüfen & verbinden</button>${updEdit?'<button type="button" class="btn" id="up_cancel">Abbrechen</button>':''}</div>`}
-    <div id="updStatus" class="updstat"${UPD?'':' hidden'}>${UPD}</div>
-</div></details><details class="acc" data-acc="eintr"${menuAcc==='eintr'?' open':''}><summary><span class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="at"><b>Einträge</b><small>${db.devices.length} Geräte · ${db.contracts.length} Verträge</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary><div class="accb">
-    <div class="actions"><button type="button" class="btn danger" id="del">Alle Einträge löschen</button></div></div></details>`,
+      Verschlüsselt mit AES-256 · sperrt nach 5 Min. ohne Eingabe oder 1 Min. im Hintergrund</div>`
+  +mAcc('sicher','lock','Sicherheit','Passwort · Fingerabdruck '+(bio?'an':'aus'),`
+    <p class="ds-hint">Alle Daten liegen verschlüsselt auf diesem Gerät${g?' und als verschlüsselte Sicherung in deinem privaten GitHub-Repo':''}. Sonst wird nichts gesendet. Dein Passwort wird nicht gespeichert.</p>
+    ${bioPossible()?`<div class="ds-lbl">Fingerabdruck</div>
+    <p class="ds-hint">${bio?'Entsperren per Fingerabdruck ist eingeschaltet. Das Passwort funktioniert weiterhin und bleibt für den Notfall wichtig.':'Entsperre die MyBelegBox mit Fingerabdruck oder Gesichtserkennung statt mit dem Passwort. Dafür wird ein Passkey „MyBelegBox“ in deinem Passwortmanager angelegt.'}</p>
+    <div class="ds-acts"><button type="button" class="ds-btn${bio?'':' pri'}" id="bioBtn">${bio?'Ausschalten':'Einschalten'}</button></div>`:''}
+    <div class="ds-lbl${bioPossible()?' sep':''}">Passwort</div>
+    <p class="ds-hint">Beim Ändern werden alle Daten neu verschlüsselt. Ältere Sicherungsdateien brauchen weiter das Passwort, das beim Sichern galt.</p>
+    <div class="ds-acts"><button type="button" class="ds-btn" id="pwBtn">Passwort ändern</button></div>`)
+  +mAcc('gh','down','Datensicherung',(g?'GitHub '+(ghStat.err?'⚠️ Problem':'an'):'GitHub aus')+' · '+(lb?'Datei '+fmtD(parse(lb)):'keine Datei'),`
+    <div class="ds-lbl">Automatisch in GitHub</div>
+    ${g?`<p class="ds-hint">Nach jeder Änderung landet der verschlüsselte Tresor in <b>${esc(g.owner)}/${esc(g.repo)}</b>. GitHub sieht nur verschlüsselte Daten.</p>
+    <div class="ds-stat" id="ghStatus">${ghStatusText()}</div>
+    ${ghStat.conflict?`<div class="ds-box crit">Im Repo liegt ein anderer Tresor (z. B. von einem früheren Gerät). Er bleibt in der Versionsgeschichte von GitHub erhalten, wenn du ihn ersetzt.<div class="ds-acts"><button type="button" class="ds-btn pri" id="ghPull">GitHub-Stand laden</button><button type="button" class="ds-btn dng" id="ghForce">Durch diesen ersetzen</button></div></div>`:''}
+    <div class="ds-acts"><button type="button" class="ds-btn pri" id="ghNow">Jetzt sichern</button><button type="button" class="ds-btn" id="ghOff">Trennen</button></div>`
+    :`<p class="ds-hint">Sichert den verschlüsselten Tresor und alle Dokumente nach jeder Änderung in ein <b>privates</b> GitHub-Repo – auch wenn Browserdaten gelöscht werden, bleibt alles erhalten.</p>
+    <div class="ds-acts"><button type="button" class="ds-btn pri" id="ghSetup">GitHub einrichten</button></div>`}
+    <div class="ds-lbl sep">Sicherungsdatei</div>
+    <p class="ds-hint">Zusätzlich oder statt GitHub: eine Datei, die du selbst ablegst. Sie ist mit deinem aktuellen Passwort verschlüsselt und enthält auch alle PDFs und Dokumente. ${lb?'Letzte Sicherung: '+fmtD(parse(lb))+'.':'Bisher keine Sicherung.'}</p>
+    <div class="ds-acts"><button type="button" class="ds-btn${g?'':' pri'}" id="bkGo">Sicherung erstellen</button><label class="ds-btn">Sicherung laden<input id="bkIn" type="file" accept=".belegbox,application/json" hidden></label></div>
+    ${persisted===false?'<p class="ds-hint" style="margin-top:10px">Der Browser hat dauerhaften Speicher nicht zugesagt. Installiere die App auf dem Startbildschirm und sichere regelmäßig.</p>':''}`,!!(g&&(ghStat.conflict||ghStat.err)))
+  +mAcc('erin','bell','Erinnerungen',db.meta&&db.meta.remind?'an':'aus',
+    'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="ds-hint">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die MyBelegBox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
+    <div class="ds-acts"><button type="button" class="ds-btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="ds-btn" id="rmOff">Ausschalten</button></div>`
+    :`<p class="ds-hint">Die MyBelegBox meldet sich, wenn in den nächsten 14 Tagen eine Kündigungsfrist oder Garantie abläuft – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
+    <div class="ds-acts"><button type="button" class="ds-btn pri" id="rmOn">Einschalten</button></div><p class="ds-err" id="rmMsg" hidden></p>`):'<p class="ds-hint">Dieser Browser kann keine Benachrichtigungen anzeigen.</p>')
+  +`<button type="button" class="accrow" id="revM">${mIco('star')}<span class="at"><b>Jahresrückblick ${reviewYear()}</b><small>${T0.getMonth()<11&&reviewYear()===T0.getFullYear()?'bis heute ansehen':'ansehen'}</small></span>${mChev(true)}</button>`
+  +mAcc('kal','cal','Kalender','Fristen als Termine exportieren',`
+    <p class="ds-hint">Exportiert alle Kündigungsfristen und Garantie-Enden als Termine mit Erinnerung 7 Tage und 1 Tag vorher. Nach neuen Einträgen einfach erneut exportieren, bestehende Termine werden aktualisiert.</p>
+    <label class="ds-check"><input id="icsNeutral" type="checkbox" checked> Neutrale Titel (keine Anbieter oder Geräte im Kalender)</label>
+    <div class="ds-acts"><button type="button" class="ds-btn" id="icsGo">Fristen in Kalender exportieren</button></div>`)
+  +mAcc('upd','pkg','App-Update','Version '+APP_VERSION+' · '+(u?'GitHub verbunden':'nicht verbunden'),`
+    ${u?`<p class="ds-hint">Verbunden mit <b>${esc(u.repo)}</b>. Lade hier das Zip-Paket einer neuen Version hoch – GitHub prüft die Versionsnummer und veröffentlicht es in 1–2 Minuten.</p>
+    <div class="ds-acts"><label class="ds-btn pri"${updBusy?' aria-disabled="true"':''}>${updBusy?'Update läuft …':'Update-Zip hochladen'}<input id="up_in" type="file" accept=".zip,application/zip" hidden></label><button type="button" class="ds-btn" id="up_chg">Verbindung ändern</button><button type="button" class="ds-btn" id="up_off">Trennen</button></div>`
+    :`<p class="ds-hint">Neue Versionen als Zip direkt aus der App veröffentlichen. Dafür brauchst du einen eigenen Zugangsschlüssel nur für das App-Repo.</p>
+    <div class="ds-acts"><button type="button" class="ds-btn pri" id="up_chg">GitHub verbinden</button></div>`}
+    <div id="updStatus" class="ds-box"${UPD?'':' hidden'}>${UPD}</div>`,!!UPD)
+  +mAcc('eintr','list','Einträge',db.devices.length+' Geräte · '+db.contracts.length+' Verträge',`
+    <p class="ds-hint">${db.devices.length} Geräte · ${db.contracts.length} Verträge. Löscht alle Geräte, Verträge und Dokumente auf diesem Gerät. Das lässt sich nicht rückgängig machen.</p>
+    <div class="ds-acts"><button type="button" class="ds-btn dng" id="del">Alle Einträge löschen</button></div>`)
+  +`<p class="ds-ver">MyBelegBox · Version ${APP_VERSION}</p>`,
   s=>{s.querySelectorAll('details.acc[data-acc]').forEach(d=>d.addEventListener('toggle',()=>{if(d.open){menuAcc=d.dataset.acc;
        s.querySelectorAll('details.acc[open]').forEach(o=>{if(o!==d)o.open=false});buzz(4)}else if(menuAcc===d.dataset.acc)menuAcc=null}));
-     s.querySelector('#pwf').addEventListener('submit',async e=>{e.preventDefault();const er=s.querySelector('#pwerr'),go=s.querySelector('#pwgo');
-       const p0=s.querySelector('#pw0').value,p1=s.querySelector('#pw1').value,p2=s.querySelector('#pw2').value;
-       const fail=m=>{er.textContent=m;er.hidden=false;go.disabled=false;go.textContent='Passwort ändern'};
-       if(p1.length<10)return fail('Das neue Passwort braucht mindestens 10 Zeichen.');
-       if(p1!==p2)return fail('Die neuen Passwörter stimmen nicht überein.');
-       er.hidden=true;go.disabled=true;go.textContent='Wird neu verschlüsselt …';
-       try{await changePassword(p0,p1)}catch(x){return fail('Das aktuelle Passwort ist falsch.')}
-       closeSheet();celebrate('Neu verschlüsselt');toast('Passwort geändert. Deine Daten sind neu verschlüsselt.')});
+     s.querySelector('#pwBtn').onclick=()=>dsForm('Passwort ändern',[{k:'p0',l:'Aktuelles Passwort',t:'password',req:true,ac:'current-password'},{k:'p1',l:'Neues Passwort (mind. 10 Zeichen)',t:'password',req:true,ac:'new-password'},{k:'p2',l:'Neues Passwort wiederholen',t:'password',req:true,ac:'new-password'}],async(v,fail)=>{
+       if(v.p1.length<10)return fail('Das neue Passwort braucht mindestens 10 Zeichen.');
+       if(v.p1!==v.p2)return fail('Die neuen Passwörter stimmen nicht überein.');
+       try{await changePassword(v.p0,v.p1)}catch(x){return fail('Das aktuelle Passwort ist falsch.')}
+       closeSheet();celebrate('Neu verschlüsselt');toast('Passwort geändert. Deine Daten sind neu verschlüsselt.')},{ok:'Passwort ändern'});
      const bb=s.querySelector('#bioBtn');
-     if(bb)bb.onclick=async()=>{const m=s.querySelector('#bioMsg');m.hidden=true;bb.disabled=true;
+     if(bb)bb.onclick=async()=>{bb.disabled=true;
        try{ if(vmeta.bio){await disableBio();closeSheet();toast('Fingerabdruck ausgeschaltet. Den Passkey „MyBelegBox“ kannst du im Passwortmanager löschen.')}
             else{await enableBio();closeSheet();celebrate('Fingerabdruck an');toast('Fingerabdruck eingeschaltet. Probier es gleich mit „Sperren“ aus.')} }
-       catch(x){bb.disabled=false;m.textContent=x&&x.name==='NotAllowedError'?'Abgebrochen.':(x&&x.name==='InvalidStateError'?'Für dieses Gerät gibt es schon einen MyBelegBox-Passkey. Lösche ihn im Passwortmanager und versuch es erneut.':(x&&x.message)||'Das hat nicht geklappt.');
-         m.style.color='var(--crit)';m.hidden=false}};
-     const ghGo=s.querySelector('#gh_go');
-     if(ghGo)ghGo.onclick=async()=>{const m=s.querySelector('#gh_msg');
-       const g={owner:s.querySelector('#gh_o').value.trim(),repo:s.querySelector('#gh_r').value.trim(),token:s.querySelector('#gh_t').value.trim()};
-       const say=(t,bad)=>{m.textContent=t;m.style.color=bad?'var(--crit)':'';m.hidden=false};
-       if(!g.owner||!g.repo||!g.token)return say('Bitte alle drei Felder ausfüllen.',true);
-       ghGo.disabled=true;say('Prüfe Zugang …');
+       catch(x){bb.disabled=false;toast(x&&x.name==='NotAllowedError'?'Abgebrochen.':(x&&x.name==='InvalidStateError'?'Für dieses Gerät gibt es schon einen MyBelegBox-Passkey. Lösche ihn im Passwortmanager und versuch es erneut.':(x&&x.message)||'Das hat nicht geklappt.'))}};
+     const ghS=s.querySelector('#ghSetup');
+     if(ghS)ghS.onclick=()=>dsForm('GitHub-Sicherung einrichten',[{k:'owner',l:'Konto / Organisation',req:true,v:'jazm-belegbox'},{k:'repo',l:'Privates Repo',req:true,v:'belegbox-daten'},{k:'token',l:'Zugangsschlüssel (github_pat_…)',t:'password',req:true}],async(v,fail)=>{
+       const g={owner:v.owner.trim(),repo:v.repo.trim(),token:v.token.trim()};
+       if(!g.owner||!g.repo||!g.token)return fail('Bitte alle drei Felder ausfüllen.');
        try{const info=await ghFetch(g,'GET','');
          if(!info)throw Object.assign(new Error(),{status:404});
-         if(!info.private){ghGo.disabled=false;return say('Dieses Repo ist öffentlich. Aus Sicherheitsgründen sichert die MyBelegBox nur in private Repos.',true)}
-         if(info.permissions&&info.permissions.push===false){ghGo.disabled=false;return say('Der Schlüssel darf in dieses Repo nicht schreiben. Setze „Contents“ auf „Read and write“.',true)}
-       }catch(x){ghGo.disabled=false;return say(ghErrText(x),true)}
+         if(!info.private)return fail('Dieses Repo ist öffentlich. Aus Sicherheitsgründen sichert die MyBelegBox nur in private Repos.');
+         if(info.permissions&&info.permissions.push===false)return fail('Der Schlüssel darf in dieses Repo nicht schreiben. Setze „Contents“ auf „Read and write“.');
+       }catch(x){return fail(ghErrText(x))}
        db.meta=Object.assign({},db.meta,{gh:g});setGhStat({err:'',at:0,conflict:false});await save();
-       openMenu();ghSync().then(()=>{if(!ghStat.err){celebrate('GitHub verbunden');toast('Automatische Sicherung ist aktiv.')}else openMenu()})};
-     const ghN=s.querySelector('#ghNow');if(ghN)ghN.onclick=async()=>{await ghSync();if(!ghStat.err){buzz(10);toast('Auf GitHub gesichert.')}};
-     const ghP=s.querySelector('#ghPull');if(ghP){let armed=false;ghP.onclick=async()=>{
-       if(!armed){armed=true;ghP.textContent='Ersetzt die Daten auf diesem Gerät – nochmal tippen';return}
+       openMenu();ghSync().then(()=>{if(!ghStat.err){celebrate('GitHub verbunden');toast('Automatische Sicherung ist aktiv ✓')}else openMenu()})},
+       {ok:'Verbinden & sichern',html:'<p class="ds-dlg-intro">Sichert den verschlüsselten Tresor nach jeder Änderung in ein <b>privates</b> GitHub-Repo. GitHub sieht nur verschlüsselte Daten. Zugangsschlüssel: nur für dieses Repo, mit <b>Contents: Read and write</b>.</p>'});
+     const ghN=s.querySelector('#ghNow');if(ghN)ghN.onclick=async()=>{await ghSync();if(!ghStat.err){buzz(10);toast('Auf GitHub gesichert ✓')}};
+     const ghP=s.querySelector('#ghPull');if(ghP)ghP.onclick=async()=>{
+       if(!confirm('Die Daten auf diesem Gerät durch den GitHub-Stand ersetzen?'))return;
        ghP.disabled=true;ghP.textContent='Lade von GitHub …';
-       try{const o=await ghRestore(ghCfg());await saving;await restoreVault(o);setGhStat({err:'',conflict:false})}catch(x){ghP.disabled=false;ghP.textContent='Stattdessen den GitHub-Stand laden';toast(x&&x.status?ghErrText(x):(x&&x.message||'Das hat nicht geklappt.'))}}}
-     const ghF=s.querySelector('#ghForce');if(ghF)ghF.onclick=async()=>{await ghSync(true);openMenu();if(!ghStat.err)celebrate('Gesichert')};
-     const ghX=s.querySelector('#ghOff');if(ghX){let armed=false;ghX.onclick=()=>{if(!armed){armed=true;ghX.classList.add('danger','sure');ghX.textContent='Wirklich trennen?';return}
-       const m=Object.assign({},db.meta);delete m.gh;db.meta=m;setGhStat({err:'',at:0,conflict:false});save();openMenu();toast('GitHub getrennt. Im Repo bleibt alles liegen.')}}
+       try{const o=await ghRestore(ghCfg());await saving;await restoreVault(o);setGhStat({err:'',conflict:false})}catch(x){ghP.disabled=false;ghP.textContent='GitHub-Stand laden';toast(x&&x.status?ghErrText(x):(x&&x.message||'Das hat nicht geklappt.'))}};
+     const ghF=s.querySelector('#ghForce');if(ghF)ghF.onclick=async()=>{if(!confirm('Den Tresor im Repo durch diesen ersetzen? Der alte bleibt in der GitHub-Versionsgeschichte.'))return;await ghSync(true);openMenu();if(!ghStat.err)celebrate('Gesichert')};
+     const ghX=s.querySelector('#ghOff');if(ghX)ghX.onclick=()=>{if(!confirm('GitHub-Sicherung trennen? Im Repo bleibt alles liegen.'))return;
+       const m=Object.assign({},db.meta);delete m.gh;db.meta=m;setGhStat({err:'',at:0,conflict:false});save();openMenu();toast('GitHub-Sicherung getrennt.')};
      bindUpd(s);
      s.querySelector('#revM').onclick=()=>{closeSheet(false);openReview()};
      const rmOn=s.querySelector('#rmOn');if(rmOn)rmOn.onclick=async()=>{const m=s.querySelector('#rmMsg');rmOn.disabled=true;
        try{const bg=await remindOn();openMenu();celebrate('Erinnerungen an');toast(bg?'Erinnerungen sind an – auch bei geschlossener App.':'Erinnerungen sind an. Dein Browser prüft beim Öffnen der App.')}
-       catch(x){rmOn.disabled=false;m.textContent=x.message;m.style.color='var(--crit)';m.hidden=false}};
+       catch(x){rmOn.disabled=false;m.textContent=x.message;m.hidden=false}};
      const rmOff=s.querySelector('#rmOff');if(rmOff)rmOff.onclick=async()=>{await remindOff();openMenu();toast('Erinnerungen ausgeschaltet.')};
      const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('MyBelegBox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
      s.querySelector('#bkGo').onclick=async()=>{await exportBackup();if(root.firstElementChild&&db)openMenu()};
-     let pending=null;const msg=s.querySelector('#bkMsg'),cf=s.querySelector('#bkConfirm'),bi=s.querySelector('#bkIn');
-     bi.addEventListener('change',async()=>{const file=bi.files[0];if(!file)return;msg.hidden=true;
-       try{pending=await readBackupFile(file);cf.hidden=false}catch(x){msg.textContent=x.message;msg.style.color='var(--crit)';msg.hidden=false}bi.value=''});
-     s.querySelector('#bkNo').onclick=()=>{pending=null;cf.hidden=true};
-     s.querySelector('#bkYes').onclick=()=>{if(pending)saving.then(()=>restoreVault(pending))};
+     const bi=s.querySelector('#bkIn');
+     bi.addEventListener('change',async()=>{const file=bi.files[0];bi.value='';if(!file)return;
+       let pending;try{pending=await readBackupFile(file)}catch(x){toast(x.message);return}
+       if(confirm('Die Daten auf diesem Gerät werden durch die Sicherung ersetzt. Fortfahren?'))saving.then(()=>restoreVault(pending))});
      armDelete(s,()=>{db={devices:[],contracts:[]};fileClear().catch(()=>{})})});
+}
+/* Kleines Fenster für Eingaben (GitHub einrichten, Passwort ändern) – wie in MySmartBox und MyGesundBox */
+function dsForm(title,fields,onSave,o={}){
+  let d=document.getElementById('dsdlg');
+  if(!d){d=document.createElement('dialog');d.id='dsdlg';d.className='dsdlg';d.innerHTML='<form autocomplete="off"></form>';document.body.appendChild(d)}
+  const f=d.querySelector('form');
+  f.innerHTML=`<h2>${esc(title)}</h2>${o.html||''}${fields.map((x,i)=>`<label for="dsf${i}">${esc(x.l)}</label><input id="dsf${i}" name="${x.k}" type="${x.t||'text'}" value="${esc(x.v||'')}"${x.req?' required':''} autocomplete="${x.ac||'off'}" autocapitalize="off" spellcheck="false">`).join('')}
+    <p class="ds-err" hidden></p><div class="dsrow"><button type="button" class="ds-btn" data-x="c">Abbrechen</button><button class="ds-btn pri">${esc(o.ok||'Speichern')}</button></div>`;
+  const er=f.querySelector('.ds-err'),ok=f.querySelector('.ds-btn.pri');
+  const fail=m=>{er.textContent=m;er.hidden=false;return false};
+  f.querySelector('[data-x=c]').onclick=()=>d.close();
+  f.onsubmit=async e=>{e.preventDefault();er.hidden=true;const v={};fields.forEach(x=>v[x.k]=f.elements[x.k].value);
+    ok.disabled=true;const t=ok.textContent;ok.textContent='Prüfe …';
+    try{const r=await onSave(v,fail);if(r!==false)d.close()}catch(x){fail(x&&x.message||'Das hat nicht geklappt.')}finally{ok.disabled=false;ok.textContent=t}};
+  if(!d.open)d.showModal();setTimeout(()=>{const i=f.querySelector('input');if(i)i.focus()},50);
 }
 
 /* ================= Neue Funktionen (0.7) ================= */
@@ -1886,7 +1880,7 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading||!hadController)return;reloading=true;location.reload()});
   navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(reg=>{swReg=reg;
     const offer=w=>{const r=document.getElementById('updRoot');
-      r.innerHTML='<div class="upd" role="status"><span>Neue Version der MyBelegBox verfügbar</span><button type="button" id="updGo">Aktualisieren</button><button type="button" id="updX" aria-label="Später">✕</button></div>';
+      r.innerHTML='<div class="ds-updbar" role="status"><span>Neue Version der MyBelegBox ist da.</span><button type="button" class="ds-btn pri" id="updGo">Aktualisieren</button><button type="button" class="ds-x" id="updX" aria-label="Später">✕</button></div>';
       document.getElementById('updGo').onclick=()=>saving.then(()=>w.postMessage('SKIP_WAITING'));
       document.getElementById('updX').onclick=()=>{r.innerHTML=''}};
     if(reg.waiting&&navigator.serviceWorker.controller)offer(reg.waiting);

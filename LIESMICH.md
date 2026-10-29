@@ -1,6 +1,12 @@
-# MyBelegBox – Test-App 0.9.2.0
+# MyBelegBox – Test-App 0.9.3.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.9.3
+
+- **Gleiche Optik wie MySmartBox und MyGesundBox** bei „Daten & Sicherheit“: Bereiche Sicherheit, Datensicherung und App-Update mit Zwischenüberschriften, gleichen Beschriftungen und Knöpfen.
+- „GitHub einrichten“, „App-Update verbinden“ und „Passwort ändern“ öffnen jetzt ein kleines Fenster statt Eingabefelder im Bereich.
+- Sperrbildschirm als Karte wie in den anderen Boxen, Hinweis „Neue Version“ und Meldungen unten im gleichen Stil.
 
 ## Neu in 0.9.2
 

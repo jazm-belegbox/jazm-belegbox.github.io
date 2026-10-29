@@ -149,9 +149,10 @@ nav.tabs button[aria-current="page"]{color:var(--accent);font-weight:700}
 /* Sheet */
 .scrim{position:fixed;inset:0;z-index:40;background:rgba(5,15,12,.45);display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--surface);width:100%;max-width:720px;max-height:92%;overflow-y:auto;border-radius:20px 20px 0 0;
-  padding:8px max(18px, env(safe-area-inset-left,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(18px, env(safe-area-inset-right,0px))}
+  padding:8px max(16px, env(safe-area-inset-left,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px, env(safe-area-inset-right,0px))}
 .grab{width:40px;height:4px;border-radius:99px;background:var(--line);margin:4px auto 12px}
-.sheethead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.sheethead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}
+.sheethead .icobtn{flex:none}
 .sheethead h2{font-size:22px}
 .x{background:var(--sunk);border:0;border-radius:99px;width:34px;height:34px;flex:none;font-size:18px;line-height:1}
 dl.kv{display:grid;grid-template-columns:minmax(0,8.5em) minmax(0,1fr);gap:9px 14px;margin:0 0 18px}
@@ -528,6 +529,78 @@ html.tilt .p-ok{background-image:linear-gradient(100deg,transparent 35%,var(--sh
 .tip p{margin:6px 0 0}
 .updstat{margin-top:12px;padding:10px 12px;border-radius:12px;background:var(--sunk);font-size:14px;line-height:1.45;overflow-wrap:anywhere}
 .updstat a{color:var(--accent);font-weight:700}
+
+/* ds:start */
+:root{--ds-ink:var(--ink);--ds-muted:var(--muted);--ds-line:var(--line);--ds-surface:var(--surface);--ds-sunk:var(--sunk);--ds-accent:var(--accent);--ds-accent-ink:var(--accent-ink);--ds-soft:var(--accent-soft);--ds-crit:var(--crit);--ds-crit-soft:var(--crit-soft);--ds-warn-soft:var(--warn-soft);--ds-ok:var(--ok)}
+/* ===== Gemeinsamer Baustein „Daten & Sicherheit“ – identisch in MySmartBox, MyGesundBox, MyBelegBox =====
+   Nur die Farbzuordnung (--ds-*) oben unterscheidet sich je App. */
+.ds-lbl{display:block;font-size:12px;line-height:1.3;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--ds-muted);margin:14px 0 8px}
+.ds-lbl.sep{border-top:1px solid var(--ds-line);padding-top:14px;margin-top:18px}
+.ds-hint{display:block;font-size:14px;line-height:1.45;color:var(--ds-muted);font-weight:400;margin:0 0 10px;max-width:none}
+.ds-hint b{color:var(--ds-ink);font-weight:700}
+.ds-stat{font-weight:400;display:flex;align-items:center;gap:8px;font-size:14px;line-height:1.4;color:var(--ds-ink);background:var(--ds-sunk);border-radius:10px;padding:9px 12px;margin:0 0 10px}
+.ds-acts{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 4px}
+.ds-btn{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:42px;padding:0 16px;border-radius:12px;border:1px solid var(--ds-line);background:var(--ds-surface);color:var(--ds-ink);font-family:inherit;font-size:15px;font-weight:600;line-height:1.1;cursor:pointer;white-space:nowrap;text-align:center}
+.ds-btn:focus-visible{outline:2px solid var(--ds-accent);outline-offset:2px}
+.ds-btn.pri{background:var(--ds-accent);border-color:var(--ds-accent);color:var(--ds-accent-ink)}
+.ds-btn.dng{background:transparent;border-color:var(--ds-crit);color:var(--ds-crit)}
+.ds-btn.dng.sure{background:var(--ds-crit);color:var(--ds-surface)}
+.ds-btn[disabled],.ds-btn[aria-disabled="true"]{opacity:.55;pointer-events:none}
+.ds-btn input[type=file]{display:none}
+.ds-box{font-weight:400!important;border-radius:12px;padding:12px;margin:0 0 10px;font-size:14px;line-height:1.45;color:var(--ds-ink);background:var(--ds-sunk);overflow-wrap:anywhere}
+.ds-box.crit{background:var(--ds-crit-soft)} .ds-box.warn{background:var(--ds-warn-soft)}
+.ds-box .ds-acts{margin:10px 0 0}
+.ds-box a{color:var(--ds-accent);font-weight:700}
+.ds-box .ds-btn{min-height:36px;padding:0 12px;font-size:14px}
+.ds-check{font-weight:400;display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ds-ink);margin:0 0 10px}
+.ds-end{height:4px}
+.ds-ver{text-align:center;color:var(--ds-muted);font-size:12px;line-height:1.5;margin:14px 0 4px}
+/* Akkordeon-Kopf im Blatt: gleiche Maße überall */
+.ds-sheet .ds-acc-ai{width:36px;height:36px;flex:none;border-radius:10px;background:var(--ds-soft);color:var(--ds-accent);display:grid;place-items:center}
+.ds-sheet .ds-acc-ai svg{width:19px;height:19px}
+/* Fenster (GitHub einrichten, Passwort ändern) */
+.ds-dlg-intro{font-size:14px;line-height:1.45;color:var(--ds-muted);margin:0 0 12px}
+.ds-dlg-intro b{color:var(--ds-ink)}
+.ds-err{font-size:14px;line-height:1.4;color:var(--ds-crit);margin:0 0 10px}
+/* Hinweis „Neue Version“ oben */
+.ds-updbar{position:fixed;z-index:120;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));top:calc(env(safe-area-inset-top,0px) + 10px);max-width:560px;margin:0 auto;display:flex;align-items:center;gap:8px;padding:8px 6px 8px 16px;border-radius:14px;background:var(--ds-surface);color:var(--ds-ink);border:1px solid var(--ds-line);box-shadow:0 8px 24px rgba(0,0,0,.16);font-size:14px;font-weight:600;line-height:1.35;transform:none}
+.ds-updbar span{flex:1;min-width:0}
+.ds-updbar .ds-btn{min-height:36px;padding:0 12px;font-size:14px}
+.ds-x{all:unset;box-sizing:border-box;cursor:pointer;width:34px;height:34px;flex:none;display:grid;place-items:center;color:var(--ds-muted);border-radius:8px;font-size:16px}
+
+/* App-spezifisch: Kopfzeile der Bereiche wie in den anderen Apps */
+.acc .at b,.accrow .at b{font-weight:800;font-size:16px}
+.accb>.ds-lbl:first-child,.accb>.ds-hint:first-child{margin-top:12px}
+/* Fenster wie in MySmartBox / MyGesundBox */
+.dsdlg{border:0;border-radius:20px;padding:0;width:min(480px,94vw);max-height:90vh;background:var(--surface);color:var(--ink)}
+.dsdlg::backdrop{background:rgba(0,0,0,.45)}
+.dsdlg form{padding:20px}
+.dsdlg h2{margin:0 0 12px;font-size:19px;font-weight:800;line-height:1.3}
+.dsdlg label{display:block;font-size:13px;line-height:1.4;margin:0;color:var(--muted);text-align:left;font-weight:400}
+.dsdlg input{width:100%;box-sizing:border-box;height:auto;min-height:0;line-height:1.3;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);margin:4px 0 10px;font-size:16px}
+.dsrow{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;margin-top:6px}/* Sperrbildschirm wie in MySmartBox / MyGesundBox: Karte, mittig, Felder mit Platzhalter */
+#lock .lockcard{display:block;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:28px 24px;text-align:center}
+#lock .lockcard .vault{width:72px;height:72px;border-radius:18px;margin:0 auto}
+#lock .lockcard h2{font-size:24px;font-weight:800;line-height:1.2;margin:12px 0 4px}
+#lock .lockcard>p{font-size:14px;line-height:1.45;color:var(--muted);margin:0 0 18px}
+#lock .lockcard .field{display:block;margin:0;text-align:left}
+#lock .lockcard .field>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+#lock .lockcard .field input{padding:12px 14px;border-radius:12px;margin:4px 0 10px;font-size:16px}
+#lock .lockcard .note,#lock .lockcard .check{text-align:left;margin:0 0 10px}
+#lock .lockcard #lerr{margin:0 0 6px;font-size:14px}
+#lock .lockcard #lgo{width:100%;margin-top:8px;padding:13px 18px;font-size:16px}
+#lock .lockcard .btn.bio{width:100%;margin-top:10px;padding:11px 16px;font-weight:600}
+#lock .lockcard .btn.bio svg{width:20px;height:20px}
+#lock .lockcard .linkbtn{display:block;width:100%;color:var(--accent);font-size:14px;margin-top:12px;padding:4px}
+#lock .lockcard .ghbox{display:block;text-align:left;border:0;border-top:1px solid var(--line);border-radius:0;padding:12px 0 0;margin-top:14px;background:none}
+#lock .lockcard .ghbox .field>span{position:static;width:auto;height:auto;clip:auto;font-size:13px;color:var(--muted);font-weight:400}
+#lock .lockcard .ghbox #lgo_go{width:100%;padding:13px 18px;font-size:16px}
+#lock .lockcard .lver{text-align:center;font-size:12px;margin:16px 0 0}
+
+/* Meldungen unten: gleich in allen Apps */
+.toast{position:fixed!important;left:50%!important;right:auto!important;top:auto!important;transform:translateX(-50%)!important;bottom:calc(150px + env(safe-area-inset-bottom,0px))!important;z-index:130!important;background:var(--ds-ink)!important;color:var(--ds-surface)!important;padding:10px 16px!important;border-radius:12px!important;font-size:14px!important;line-height:1.4!important;font-weight:500!important;width:max-content!important;max-width:min(calc(100vw - 32px),440px)!important;box-sizing:border-box!important;text-align:center!important;box-shadow:0 6px 20px rgba(0,0,0,.18)!important}
+
+/* ds:end */
 </style>
 </head>
 <body>
