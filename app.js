@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.10.0.0';
+const APP_VERSION='0.10.1.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
