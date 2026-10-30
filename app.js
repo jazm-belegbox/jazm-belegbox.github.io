@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.10.2.0';
+const APP_VERSION='0.10.3.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -1300,9 +1300,11 @@ function openMenu(){
     <div class="ds-acts"><button type="button" class="ds-btn${g?'':' pri'}" id="bkGo">Sicherung erstellen</button><label class="ds-btn">Sicherung laden<input id="bkIn" type="file" accept=".belegbox,application/json" hidden></label></div>
     ${persisted===false?'<p class="ds-hint" style="margin-top:10px">Der Browser hat dauerhaften Speicher nicht zugesagt. Installiere die App auf dem Startbildschirm und sichere regelmäßig.</p>':''}`,!!(g&&(ghStat.conflict||ghStat.err)))
   +mAcc('erin','bell','Erinnerungen',db.meta&&db.meta.remind?'an':'aus',
-    'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="ds-hint">An. Läuft in den nächsten 14 Tagen eine Frist ab, meldet sich die MyBelegBox mit einer neutralen Benachrichtigung – auf Android mit einem Punkt am App-Icon. ${db.meta.remindBg?'Android prüft das auch bei geschlossener App, meist etwa einmal am Tag.':'Dein Browser prüft das nur, wenn du die App öffnest.'}</p>
+    'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="ds-hint">An. Vor einer Frist meldet sich die MyBelegBox einmal am Tag mit einer neutralen Benachrichtigung. Geprüft wird bei jedem Öffnen der App${db.meta.remindBg?' und ab und zu bei geschlossener App – wie oft, entscheidet Android':'. Bei geschlossener App nur, wenn sie auf dem Startbildschirm installiert ist'}. Ganz sicher: zusätzlich in den Kalender exportieren.</p>
+    <div class="ds-lbl">So früh melden</div><div class="ds-seg" role="radiogroup" aria-label="So früh melden" style="margin:0 0 10px">${LEADS.map(k=>`<button type="button" role="radio" aria-checked="${remLead()===k}" data-lead="${k}">${k} Tage</button>`).join('')}</div>
+    <p class="ds-stat" id="rmNext" style="display:block">${remindNext()}</p>
     <div class="ds-acts"><button type="button" class="ds-btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="ds-btn" id="rmOff">Ausschalten</button></div>`
-    :`<p class="ds-hint">Die MyBelegBox meldet sich, wenn in den nächsten 14 Tagen eine Kündigungsfrist oder Garantie abläuft – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
+    :`<p class="ds-hint">Die MyBelegBox meldet sich, wenn bald eine Kündigungsfrist oder Garantie abläuft (wählbar 7, 14 oder 30 Tage vorher) – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
     <div class="ds-acts"><button type="button" class="ds-btn pri" id="rmOn">Einschalten</button></div><p class="ds-err" id="rmMsg" hidden></p>`):'<p class="ds-hint">Dieser Browser kann keine Benachrichtigungen anzeigen.</p>')
   +`<button type="button" class="accrow" id="revM">${mIco('star')}<span class="at"><b>Jahresrückblick ${reviewYear()}</b><small>${T0.getMonth()<11&&reviewYear()===T0.getFullYear()?'bis heute ansehen':'ansehen'}</small></span>${mChev(true)}</button>`
   +mAcc('kal','cal','Kalender','Fristen als Termine exportieren',`
@@ -1357,6 +1359,10 @@ function openMenu(){
      const rmOn=s.querySelector('#rmOn');if(rmOn)rmOn.onclick=async()=>{const m=s.querySelector('#rmMsg');rmOn.disabled=true;
        try{const bg=await remindOn();openMenu();celebrate('Erinnerungen an');toast(bg?'Erinnerungen sind an – auch bei geschlossener App.':'Erinnerungen sind an. Dein Browser prüft beim Öffnen der App.')}
        catch(x){rmOn.disabled=false;m.textContent=x.message;m.hidden=false}};
+     s.querySelectorAll('[data-lead]').forEach(b=>b.onclick=async()=>{const v=+b.dataset.lead;if(v===remLead())return;
+       db.meta=Object.assign({},db.meta,{remindLead:v});await save();buzz(5);
+       s.querySelectorAll('[data-lead]').forEach(x=>x.setAttribute('aria-checked',String(+x.dataset.lead===v)));
+       const nx=s.querySelector('#rmNext');if(nx)nx.innerHTML=remindNext();updBadge();await remindPing(true)});
      const rmOff=s.querySelector('#rmOff');if(rmOff)rmOff.onclick=async()=>{await remindOff();openMenu();toast('Erinnerungen ausgeschaltet.')};
      const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('MyBelegBox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
@@ -1394,8 +1400,10 @@ const dayTxt=v=>v<1?Math.round(v*100)+' Cent':eur(v);
 /* ---------- Vertrag bewusst weiterlaufen lassen (gilt nur für die aktuelle Laufzeit) ---------- */
 function weiterOn(c){if(!c.weiter||c.status==='gekuendigt')return false;const i=contractInfo(c);return !i.offen&&c.weiter===iso(i.end)}
 
-/* ---------- Fristen der nächsten 14 Tage: Zähler am Icon und Erinnerungen ---------- */
-function dueSoon(){return db?upcoming().filter(e=>!e.weiter&&e.n>=0&&e.n<=14):[]}
+/* ---------- Fristen der nächsten Tage (Vorlauf wählbar): Zähler am Icon und Erinnerungen ---------- */
+const LEADS=[7,14,30];
+function remLead(){const v=+(db&&db.meta&&db.meta.remindLead);return LEADS.includes(v)?v:14}
+function dueSoon(){return db?upcoming().filter(e=>!e.weiter&&e.n>=0&&e.n<=remLead()):[]}
 function updBadge(){
   if(!db)return;const n=dueSoon().length;
   try{if(navigator.setAppBadge){n?navigator.setAppBadge(n):navigator.clearAppBadge()}}catch(e){}
@@ -1403,30 +1411,36 @@ function updBadge(){
 }
 /* Für Erinnerungen bei geschlossener App: nur Datum und Art, keine Namen, keine Beträge */
 const SCHED=NS+'sched-belegbox';
+function schedItems(){const items=[];
+  db.contracts.forEach(k=>{if(k.status==='gekuendigt'||weiterOn(k))return;const i=contractInfo(k);if(i.by&&days(i.by)>=0)items.push({d:iso(i.by),t:'k'});
+    const p=priceChange(k);if(p&&days(p.date)>=0)items.push({d:iso(p.date),t:'p'})});
+  db.devices.forEach(d=>{const i=deviceInfo(d);[i.gew,i.gar].forEach(x=>{if(x&&days(x)>=0)items.push({d:iso(x),t:'g'})})});
+  return items.sort((a,b)=>a.d<b.d?-1:1)}
+/* Klartext für das Menü: wann kommt die nächste Meldung? */
+function remindNext(){const it=schedItems()[0];if(!it)return 'Gerade steht keine Frist an.';
+  const lab={k:'Kündigungsfrist',g:'Garantie-Ende',p:'Preisänderung'}[it.t]||'Frist',dt=parse(it.d),n=days(dt),L=remLead();
+  if(n<=L)return `<b>Nächste Frist:</b> ${lab} am ${fmtD(dt)} (${n===0?'heute':n===1?'morgen':'in '+n+' Tagen'}). Die Meldung kommt beim Öffnen der App, auch noch gesperrt.`;
+  return `<b>Nächste Frist:</b> ${lab} am ${fmtD(dt)}. Die Meldung kommt ab dem ${fmtD(addDays(dt,-L))}.`}
 let schedLast='';
 async function writeSched(){
   if(!('caches' in window)||!db)return;
   try{const c=await caches.open(SCHED);
     if(!(db.meta&&db.meta.remind)){if(schedLast!=='off'){schedLast='off';await c.delete('./__sched')}return}
-    const items=[];
-    db.contracts.forEach(k=>{if(k.status==='gekuendigt'||weiterOn(k))return;const i=contractInfo(k);if(i.by&&days(i.by)>=0)items.push({d:iso(i.by),t:'k'});
-      const p=priceChange(k);if(p&&days(p.date)>=0)items.push({d:iso(p.date),t:'p'})});
-    db.devices.forEach(d=>{const i=deviceInfo(d);[i.gew,i.gar].forEach(x=>{if(x&&days(x)>=0)items.push({d:iso(x),t:'g'})})});
-    items.sort((a,b)=>a.d<b.d?-1:1);
-    const body=JSON.stringify({items});if(body===schedLast)return;schedLast=body;
+    const body=JSON.stringify({lead:remLead(),items:schedItems()});if(body===schedLast)return;schedLast=body;
     await c.put('./__sched',new Response(body,{headers:{'content-type':'application/json'}}));
   }catch(e){}
 }
+async function bgSync(reg){try{if(reg.periodicSync){await reg.periodicSync.register('belegbox-fristen',{minInterval:12*3600e3});return true}}catch(e){}return false}
 async function remindPing(force){
   if(!db||!(db.meta&&db.meta.remind)||!('serviceWorker' in navigator))return;
-  try{await writeSched();const r=await navigator.serviceWorker.ready;if(r.active)r.active.postMessage({type:'REMIND',force:!!force})}catch(e){}
+  try{await writeSched();const r=await navigator.serviceWorker.ready;
+    if(!force){const bg=await bgSync(r);if(bg!==!!db.meta.remindBg){db.meta=Object.assign({},db.meta,{remindBg:bg});save()}}if(r.active)r.active.postMessage({type:'REMIND',force:!!force})}catch(e){}
 }
 async function remindOn(){
   if(!('Notification' in window)||!('serviceWorker' in navigator))throw new Error('Dieser Browser kann keine Benachrichtigungen anzeigen.');
   const p=await Notification.requestPermission();
   if(p!=='granted')throw new Error('Benachrichtigungen sind für die MyBelegBox blockiert. Erlaube sie in den Android-Einstellungen unter Apps → Chrome bzw. MyBelegBox → Benachrichtigungen.');
-  const reg=await navigator.serviceWorker.ready;let bg=false;
-  try{if(reg.periodicSync){await reg.periodicSync.register('belegbox-fristen',{minInterval:12*3600e3});bg=true}}catch(e){bg=false}
+  const reg=await navigator.serviceWorker.ready;const bg=await bgSync(reg);
   db.meta=Object.assign({},db.meta,{remind:true,remindBg:bg});await save();schedLast='';await remindPing(true);return bg;
 }
 async function remindOff(){
@@ -1738,7 +1752,7 @@ if(location.search||/^#(neu|ref)=/.test(location.hash)){try{history.replaceState
 function afterUnlock(){
   setTimeout(async()=>{if(!db)return;
     let items=[];try{items=await inboxFiles()}catch(e){}
-    if(items.length){pendingAct=null;pendingShare=false;openInbox(items);return}
+    if(items.length){pendingAct=null;pendingShare=false;openInbox(items);remindPing(false);return}
     if(pendingShare){pendingShare=false;openShareText([],{})}
     if(pendingNeu||pendingRef){const n=pendingNeu,rf=pendingRef;pendingNeu=pendingRef=null;openExternal(n,rf);remindPing(false);return}
     const a=pendingAct;pendingAct=null;

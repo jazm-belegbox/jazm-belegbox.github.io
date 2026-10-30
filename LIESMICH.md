@@ -1,6 +1,12 @@
-# MyBelegBox – Test-App 0.10.2.0
+# MyBelegBox – Test-App 0.10.3.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.10.3
+
+- **Erinnerungen zuverlässiger**: Die App prüft die Fristen jetzt bei jedem Öffnen, auch solange sie noch gesperrt ist. Die Prüfung bei geschlossener App wird bei jedem Entsperren neu angemeldet, auch wenn die Erinnerungen vor der Installation eingeschaltet wurden.
+- **Wählbarer Vorlauf**: Melden ab 7, 14 oder 30 Tagen vor der Frist. Im Menü steht, welche Frist als Nächstes kommt und ab wann die Meldung erscheint.
+- Die tägliche Meldung erscheint wieder sichtbar, auch wenn die vom Vortag noch in der Leiste liegt.
 
 ## Neu in 0.10.2
 

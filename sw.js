@@ -4,7 +4,7 @@
 // Eigene Namen je Adresse: Live unter / wie bisher, eine Test-App unter /test/ mit Präfix „test-“
 const SCOPE_PATH = new URL(self.registration.scope).pathname;
 const NS = SCOPE_PATH === '/' ? '' : SCOPE_PATH.replace(/^\/|\/$/g, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-';
-const CACHE = NS + 'belegbox-0.10.2.0';
+const CACHE = NS + 'belegbox-0.10.3.0';
 const INBOX = NS + 'inbox-belegbox', SCHED = NS + 'sched-belegbox';
 const FILES = ['./', 'index.html', 'app.js', 'ds.js', 'boxen/smartbox.png', 'boxen/gesundbox.png', 'boxen/belegbox.png', 'manifest.webmanifest',
   'icons/belegbox-192.png', 'icons/belegbox-512.png', 'icons/belegbox-maskable-512.png', 'icons/belegbox-maskable-192.png', 'icons/belegbox-180.png', 'icons/belegbox-badge-96.png',
@@ -58,6 +58,8 @@ self.addEventListener('fetch', e => {
   // Alles aus dem Cache des aktuellen Stands, damit Seite und Skript immer zusammenpassen.
   // Neue Versionen kommen über eine geänderte CACHE-Nummer (Hinweis „Neue Version verfügbar“).
   if (req.mode === 'navigate') {
+    // Beim Öffnen gleich die Fristen prüfen – auch solange die App noch gesperrt ist
+    e.waitUntil(remind(false).catch(() => {}));
     e.respondWith(caches.match('index.html').then(r => r || fetch(req)));
     return;
   }
@@ -77,9 +79,10 @@ async function remind(force) {
   const c = await caches.open(SCHED), r = await c.match('./__sched');
   const old = await self.registration.getNotifications({ tag: 'belegbox-fristen' });
   if (!r) { old.forEach(n => n.close()); return; }
-  const { items = [] } = await r.json().catch(() => ({}));
+  const { items = [], lead: L0 } = await r.json().catch(() => ({}));
+  const lead = [7, 14, 30].includes(L0) ? L0 : 14;
   const t = new Date(); const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
-  const soon = items.map(x => ({ t: x.t, n: diffDays(x.d, today) })).filter(x => x.n >= 0 && x.n <= 14).sort((a, b) => a.n - b.n);
+  const soon = items.map(x => ({ t: x.t, n: diffDays(x.d, today) })).filter(x => x.n >= 0 && x.n <= lead).sort((a, b) => a.n - b.n);
   if (!soon.length) { old.forEach(n => n.close()); await c.delete('./__last'); return; }
   const last = await c.match('./__last').then(x => x && x.json()).catch(() => null);
   const key = dayIso(today) + '|' + soon.length + '|' + soon[0].n;
@@ -87,9 +90,9 @@ async function remind(force) {
   const f = soon[0];
   const body = soon.length === 1
     ? (LABEL[f.t] || 'eine Frist').replace(/^./, m => m.toUpperCase()) + ' ' + (VERB[f.t] || 'endet') + ' ' + when(f.n) + '.'
-    : soon.length + ' Fristen in den nächsten 14 Tagen – die nächste ' + when(f.n) + '.';
+    : soon.length + ' Fristen in den nächsten ' + lead + ' Tagen – die nächste ' + when(f.n) + '.';
   await self.registration.showNotification('MyBelegBox', {
-    body, tag: 'belegbox-fristen', renotify: false, icon: 'icons/belegbox-192.png', badge: 'icons/belegbox-badge-96.png', data: { url: './' }
+    body, tag: 'belegbox-fristen', renotify: true, icon: 'icons/belegbox-192.png', badge: 'icons/belegbox-badge-96.png', data: { url: './' }
   });
   await c.put('./__last', new Response(JSON.stringify({ key })));
 }
