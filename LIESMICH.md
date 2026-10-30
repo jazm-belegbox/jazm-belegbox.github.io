@@ -1,6 +1,10 @@
-# MyBelegBox – Test-App 0.10.3.0
+# MyBelegBox – Test-App 0.10.3.1
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.10.3.1
+
+- Sind Benachrichtigungen am Handy blockiert, zeigt „Erinnerungen“ das jetzt rot an – mit „Erlauben“ bzw. dem Weg in die Einstellungen. Der Test nennt bei einem Fehler den Grund.
 
 ## Neu in 0.10.3
 

@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.10.3.0';
+const APP_VERSION='0.10.3.1';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -1302,6 +1302,7 @@ function openMenu(){
   +mAcc('erin','bell','Erinnerungen',db.meta&&db.meta.remind?'an':'aus',
     'Notification' in window&&'serviceWorker' in navigator?(db.meta&&db.meta.remind?`<p class="ds-hint">An. Vor einer Frist meldet sich die MyBelegBox einmal am Tag mit einer neutralen Benachrichtigung. Geprüft wird bei jedem Öffnen der App${db.meta.remindBg?' und ab und zu bei geschlossener App – wie oft, entscheidet Android':'. Bei geschlossener App nur, wenn sie auf dem Startbildschirm installiert ist'}. Ganz sicher: zusätzlich in den Kalender exportieren.</p>
     <div class="ds-lbl">So früh melden</div><div class="ds-seg" role="radiogroup" aria-label="So früh melden" style="margin:0 0 10px">${LEADS.map(k=>`<button type="button" role="radio" aria-checked="${remLead()===k}" data-lead="${k}">${k} Tage</button>`).join('')}</div>
+    ${Notification.permission!=='granted'?`<div class="ds-box crit"><b>Benachrichtigungen sind ${Notification.permission==='default'?'nicht erlaubt':'blockiert'}.</b> Darum kommt keine Meldung. ${Notification.permission==='default'?'Tippe auf „Erlauben“.':'Erlaube sie in den Android-Einstellungen: Apps → MyBelegBox (oder Chrome) → Benachrichtigungen → an. Falls dort alles an ist: in Chrome auf das Schloss neben der Adresse → Berechtigungen → Benachrichtigungen → zulassen.'}<div class="ds-acts"><button type="button" class="ds-btn" id="rmPerm">${Notification.permission==='default'?'Erlauben':'Erneut prüfen'}</button></div></div>`:''}
     <p class="ds-stat" id="rmNext" style="display:block">${remindNext()}</p>
     <div class="ds-acts"><button type="button" class="ds-btn" id="rmTest">Test-Benachrichtigung</button><button type="button" class="ds-btn" id="rmOff">Ausschalten</button></div>`
     :`<p class="ds-hint">Die MyBelegBox meldet sich, wenn bald eine Kündigungsfrist oder Garantie abläuft (wählbar 7, 14 oder 30 Tage vorher) – auch bei geschlossener App. Auf Android erscheint dazu ein Punkt am App-Icon. Dafür liegen nur die <b>Termine ohne Namen und Beträge</b> unverschlüsselt auf dem Handy.</p>
@@ -1364,7 +1365,12 @@ function openMenu(){
        s.querySelectorAll('[data-lead]').forEach(x=>x.setAttribute('aria-checked',String(+x.dataset.lead===v)));
        const nx=s.querySelector('#rmNext');if(nx)nx.innerHTML=remindNext();updBadge();await remindPing(true)});
      const rmOff=s.querySelector('#rmOff');if(rmOff)rmOff.onclick=async()=>{await remindOff();openMenu();toast('Erinnerungen ausgeschaltet.')};
-     const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{try{const r=await navigator.serviceWorker.ready;await r.showNotification('MyBelegBox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt.')}};
+     const rmP=s.querySelector('#rmPerm');if(rmP)rmP.onclick=async()=>{try{await Notification.requestPermission()}catch(e){}
+       if(Notification.permission==='granted'){await remindPing(true);toast('Benachrichtigungen sind erlaubt ✓')}else toast('Noch blockiert. Bitte in den Einstellungen erlauben.');openMenu()};
+     const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{
+       if(Notification.permission!=='granted'){try{await Notification.requestPermission()}catch(e){}
+         if(Notification.permission!=='granted'){openMenu();toast('Benachrichtigungen sind blockiert – siehe Hinweis.');return}}
+       try{const r=await navigator.serviceWorker.ready;await r.showNotification('MyBelegBox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt: '+((x&&x.message)||x))}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
