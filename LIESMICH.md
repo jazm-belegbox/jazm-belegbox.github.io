@@ -1,6 +1,11 @@
-# MyBelegBox – Test-App 0.10.3.1
+# MyBelegBox – Test-App 0.11.0.0
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.11
+
+- **Wartungen**: Bei jedem Gerät unter „Wartung“ einen Rhythmus (z. B. jährlich), die letzte Wartung und die Wartungsfirma eintragen. Die Detailansicht zeigt die nächste Wartung, die Firma zum Anrufen und den Verlauf mit Kosten. „Wartung erledigt“ trägt sie ein und rechnet die nächste neu. Fällige Wartungen stehen unter „Demnächst fällig“, im Kalender-Export und in den Erinnerungen.
+- Benachrichtigungen zeigen in der Statusleiste ein gefülltes Beleg-Symbol statt der Glocke.
 
 ## Neu in 0.10.3.1
 

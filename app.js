@@ -1,5 +1,5 @@
 (function(){
-const APP_VERSION='0.10.3.1';
+const APP_VERSION='0.11.0.0';
 /* Eigener Speicher je Adresse: die Live-App unter / behält ihre Namen, eine Test-App unter /test/ bekommt eigene */
 const BASE=location.pathname.replace(/[^/]*$/,'');
 const NS=BASE==='/'?'':BASE.replace(/^\/|\/$/g,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'-';
@@ -552,7 +552,9 @@ function buildIcs(neutral){
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['gew','Gewährleistung',i.gew],['gar','Herstellergarantie',i.gar]].forEach(([k,t,dt])=>{if(!dt||days(dt)<0)return;
       ev.push({uid:d.id+'-'+k,date:dt,title:neutral?'MyBelegBox: '+t+' endet':t+' endet: '+d.name,
-        desc:neutral?'Details in der MyBelegBox.':`${t} für ${d.name} läuft heute ab. Mängel vorher melden.`})})});
+        desc:neutral?'Details in der MyBelegBox.':`${t} für ${d.name} läuft heute ab. Mängel vorher melden.`})});
+    const wi=wartInfo(d);if(wi&&wi.n>=0)ev.push({uid:d.id+'-wartung',date:wi.next,title:neutral?'MyBelegBox: Wartung fällig':'Wartung: '+d.name,
+      desc:neutral?'Details in der MyBelegBox.':`Wartung für ${d.name} fällig${d.wartung.firma?' – '+d.wartung.firma+(d.wartung.tel?', Tel. '+d.wartung.tel:''):''}.`})});
   const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MyBelegBox//DE','CALSCALE:GREGORIAN','METHOD:PUBLISH','X-WR-CALNAME:MyBelegBox-Fristen'];
   ev.forEach(e=>{L.push('BEGIN:VEVENT','UID:'+e.uid+'@belegbox','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+icsDay(e.date),
     'DTEND;VALUE=DATE:'+icsDay(addDays(e.date,1)),'SUMMARY:'+icsEsc(e.title),'DESCRIPTION:'+icsEsc(e.desc),'TRANSP:TRANSPARENT',
@@ -613,6 +615,10 @@ function deviceInfo(d){
   const ends=[{typ:'Gewährleistung',date:gew},gar&&{typ:'Herstellergarantie',date:gar}].filter(Boolean).filter(x=>days(x.date)>=0).sort((a,b)=>b.date-a.date);
   return {kauf,gew,gar,best:ends[0]||null};
 }
+/* Wartung: alle X Monate ab der letzten Wartung (ohne Eintrag ab Kauf) */
+function wartInfo(d){const w=d&&d.wartung;if(!w||!(Number(w.monate)>0))return null;
+  const last=w.letzte?parse(w.letzte):d.kauf?parse(d.kauf):T0;const next=addMonths(last,Number(w.monate));return {next,n:days(next),last:w.letzte?last:null,monate:Number(w.monate)}}
+const WINT=[[0,'keine'],[3,'alle 3 Monate'],[6,'alle 6 Monate'],[12,'jährlich'],[24,'alle 2 Jahre'],[36,'alle 3 Jahre'],[60,'alle 5 Jahre']];
 /* Ratenkauf: feste Monatsrate, erste Rate an einem Datum, danach jeden Monat am selben Tag */
 function rateInfo(d){const r=d.rate;if(!r||!(Number(r.betrag)>0)||!(Number(r.anzahl)>0)||!r.start)return null;
   const n=Math.round(Number(r.anzahl)),b=Number(r.betrag),start=parse(r.start);let paid=0;
@@ -642,6 +648,7 @@ function upcoming(){
   db.devices.forEach(d=>{const i=deviceInfo(d);
     [['Gewährleistung',i.gew],['Herstellergarantie',i.gar]].forEach(([t,dt])=>{if(!dt)return;const n=days(dt);
       if(n>=0&&n<=90) ev.push({date:dt,n,title:d.name,sub:'Ende '+t,kind:'d',id:d.id})});
+    const wi=wartInfo(d);if(wi&&wi.n>=0&&wi.n<=60)ev.push({date:wi.next,n:wi.n,title:d.name,sub:'Wartung fällig'+(d.wartung.firma?' · '+d.wartung.firma:''),kind:'d',id:d.id});
     const ri=rateInfo(d);if(ri&&ri.aktiv){const n=days(ri.last);if(n>=0&&n<=60)ev.push({date:ri.last,n,title:d.name,sub:`Letzte Rate · dann ${eur(ri.b)} weniger`,kind:'d',id:d.id})}});
   db.contracts.filter(c=>c.status!=='gekuendigt').forEach(c=>{const p=priceChange(c);if(!p)return;const n=days(p.date);
     if(n>=0&&n<=60) ev.push({date:p.date,n,title:c.anbieter,sub:`Neuer Preis ${eur(p.preis)} (bisher ${eur(c.kosten)})`,kind:'c',id:c.id})});
@@ -938,6 +945,7 @@ function openDetail(kind,id,from){
             ${d.rate.bank?`<dt>Finanziert über</dt><dd>${esc(d.rate.bank)}</dd>`:''}
             ${d.rate.vnr?`<dt>Finanzierungs-Nr.</dt><dd class="code"><span data-rmask>${esc(maskVal(d.rate.vnr))}</span><button type="button" class="reveal" data-rshow>Anzeigen</button></dd>`:''}
           </dl></div>`)(rateInfo(d))}
+      ${wartBlock(d)}
       ${noteBlock(d)}${extBlock(d)}
       ${docSection(d)}
       <div class="tools"><button type="button" class="tool" id="claim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L12 19a2.1 2.1 0 0 1-3-3l7.7-7.7a4 4 0 0 0-2-2z"/></svg>Mangel melden</button></div>
@@ -945,6 +953,7 @@ function openDetail(kind,id,from){
       s=>{const pr=s.querySelector('.prot');if(pr&&motion())pr.classList.add('enter');bindDocs(s,d);
           const rs=s.querySelector('[data-rshow]');if(rs){let o=false;rs.onclick=()=>{o=!o;s.querySelector('[data-rmask]').textContent=o?d.rate.vnr:maskVal(d.rate.vnr);rs.textContent=o?'Verbergen':'Anzeigen'}}
           s.querySelector('#claim').onclick=()=>openClaim(d);
+          const wd=s.querySelector('#wdone');if(wd)wd.onclick=()=>wartDone(d);
           s.querySelector('#edit').onclick=()=>openForm('d',d);armDelete(s,()=>{(d.docs||[]).forEach(x=>fileDel(x.id).catch(()=>{}));db.devices=db.devices.filter(x=>x.id!==id)})},from);
   } else {
     const c=db.contracts.find(x=>x.id===id); if(!c)return; const i=contractInfo(c);
@@ -1046,6 +1055,13 @@ function openForm(kind,item,camera,tpl){
     </div>
     <label class="field"><span>Notizen & Hinweise</span><textarea id="x_note" rows="3" placeholder="${kind==='d'?'z. B. Zubehör im Keller, Reparatur 2025, Ersatzteilnummer …':'z. B. Kündigung nur schriftlich, Ansprechpartner, Treuebonus …'}"></textarea></label>
     </div></details>
+    <details class="more"${src0&&src0.wartung&&Number(src0.wartung.monate)?' open':''}><summary><span><b>Wartung</b><small>z. B. Heizung, Therme, Klimaanlage, Rauchmelder</small></span></summary><div>
+    <div class="grid2"><label class="field"><span>Regelmäßige Wartung</span><select id="f_wint">${WINT.map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></label>
+      <label class="field"><span>Letzte Wartung</span><input id="f_wlast" type="date"></label></div>
+    <div class="grid2"><label class="field"><span>Wartungsfirma</span><input id="f_wfirma" placeholder="z. B. Heizungsbau Müller"></label>
+      <label class="field"><span>Telefon</span><input id="f_wtel" type="tel" inputmode="tel"></label></div>
+    <p class="hint">Ohne letzte Wartung rechnet die App ab dem Kaufdatum. Die MyBelegBox erinnert dich rechtzeitig.</p>
+    </div></details>
     <p class="hint">Bei Kontoauszügen vorher alles außer der Buchung schwärzen. Die gesetzliche Gewährleistung von 2 Jahren ab Kauf wird automatisch berechnet.</p>`;
   const con=`
     <label class="field"><span>Anbieter *</span><input id="c_anb" required placeholder="z. B. Spotify"></label>
@@ -1091,6 +1107,7 @@ function openForm(kind,item,camera,tpl){
       if(kind==='d'){set('f_name',src.name);set('f_kat',src.kategorie);set('f_raum',src.raum);set('f_her',src.hersteller);set('f_mod',src.modell);
         set('f_sn',src.sn);set('f_kauf',src.kauf);set('f_preis',src.preis||'');set('f_hae',src.haendler);set('f_gar',src.garantieMonate||0);set('f_nach',src.nachweis);set('x_note',src.notiz||'');
         s.querySelector('#f_ges').checked=!!src.geschaetzt;
+        if(src.wartung){set('f_wint',src.wartung.monate||0);set('f_wlast',src.wartung.letzte||'');set('f_wfirma',src.wartung.firma||'');set('f_wtel',src.wartung.tel||'')}
         if(src.rate){s.querySelector('#f_rk').checked=true;set('f_rb',src.rate.betrag);set('f_rn',src.rate.anzahl);set('f_rs',src.rate.start);
           set('f_ra',src.rate.anzahlung||'');set('f_rf',src.rate.bank||'');if(item)set('f_rv',src.rate.vnr||'')}}
       else{set('c_anb',src.anbieter);set('c_kat',src.kategorie);set('c_kd',src.kundennr);set('c_kost',src.kosten);set('c_kn',src.kostenNach==null?'':src.kostenNach);set('c_int',src.intervall);
@@ -1114,7 +1131,8 @@ function openForm(kind,item,camera,tpl){
         if(!await commitDocs())return;
         const dd={name:v('f_name'),kategorie:v('f_kat'),raum:v('f_raum'),hersteller:v('f_her'),modell:v('f_mod'),sn:v('f_sn'),
           kauf:v('f_kauf'),geschaetzt:s.querySelector('#f_ges').checked,preis:parseFloat(v('f_preis'))||0,haendler:v('f_hae'),
-          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,cover:D.cover,rate,notiz:v('x_note'),ext:(item&&item.ext)||(tpl&&tpl._ext)||undefined};
+          garantieMonate:Number(v('f_gar')),nachweis:v('f_nach'),foto,docs:D.docs,cover:D.cover,rate,notiz:v('x_note'),ext:(item&&item.ext)||(tpl&&tpl._ext)||undefined,
+          wartung:Number(v('f_wint'))>0?{monate:Number(v('f_wint')),letzte:v('f_wlast'),firma:v('f_wfirma'),tel:v('f_wtel')}:null,wartLog:(item&&item.wartLog)||[]};
         if(item){Object.assign(item,dd);delete item.ex}else{first=!db.devices.some(x=>!x.ex);db.devices.push(Object.assign({id:uid()},dd))}
         tab='geraete';
       } else {
@@ -1370,7 +1388,7 @@ function openMenu(){
      const rmT=s.querySelector('#rmTest');if(rmT)rmT.onclick=async()=>{
        if(Notification.permission!=='granted'){try{await Notification.requestPermission()}catch(e){}
          if(Notification.permission!=='granted'){openMenu();toast('Benachrichtigungen sind blockiert – siehe Hinweis.');return}}
-       try{const r=await navigator.serviceWorker.ready;await r.showNotification('MyBelegBox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt: '+((x&&x.message)||x))}};
+       try{const r=await navigator.serviceWorker.ready;await r.showNotification('MyBelegBox',{body:'So sieht eine Erinnerung aus. Namen und Beträge stehen nie darin.',tag:'belegbox-test',icon:'icons/belegbox-192.png',badge:'icons/belegbox-badge-v2-96.png'});buzz(8)}catch(x){toast('Test hat nicht geklappt: '+((x&&x.message)||x))}};
      s.querySelector('#icsGo').onclick=async()=>{const r=buildIcs(s.querySelector('#icsNeutral').checked);
        if(!r.count){toast('Gerade stehen keine Fristen an.');return}
        if(await deliverFile('belegbox-fristen.ics',r.text,'text/calendar'))toast(r.count+' Termine exportiert. Öffne die Datei mit deinem Kalender.')};
@@ -1404,6 +1422,22 @@ const perDay=c=>monthly(c)*12/365;
 const dayTxt=v=>v<1?Math.round(v*100)+' Cent':eur(v);
 
 /* ---------- Vertrag bewusst weiterlaufen lassen (gilt nur für die aktuelle Laufzeit) ---------- */
+/* Wartung in der Detailansicht: nächster Termin, Firma, Verlauf */
+function wartBlock(d){const wi=wartInfo(d);if(!wi)return '';const w=d.wartung,log=(d.wartLog||[]).slice().sort((a,b)=>a.datum<b.datum?1:-1);
+  const cls=wi.n<0?'p-crit':wi.n<=30?'p-warn':'p-ok';const tel=String(w.tel||'').replace(/[^\d+]/g,'');
+  return `<div class="label" style="margin-bottom:8px">Wartung</div><div class="rate wart">
+    <div class="rhead"><b>${wi.n<0?'Überfällig seit '+fmtD(wi.next):'Nächste Wartung '+fmtD(wi.next)}</b><span class="pill ${cls}">${inDays(wi.n)}</span></div>
+    <dl class="kv" style="margin:12px 0 0"><dt>Rhythmus</dt><dd>${esc((WINT.find(x=>x[0]===wi.monate)||[0,'alle '+wi.monate+' Monate'])[1])}</dd>
+      <dt>Zuletzt</dt><dd>${wi.last?fmtD(wi.last):'noch nicht eingetragen'}</dd>
+      ${w.firma||tel?`<dt>Firma</dt><dd>${esc(w.firma||'')}${tel?` · <a href="tel:${esc(tel)}">${esc(w.tel)}</a>`:''}</dd>`:''}</dl>
+    ${log.length?`<div class="wlog">${log.slice(0,5).map(x=>`<div><span>${fmtD(parse(x.datum))}</span><span>${x.kosten?eur(x.kosten):''}${x.notiz?' · '+esc(x.notiz):''}</span></div>`).join('')}${log.length>1?`<div class="wsum"><span>${log.length} Wartungen</span><span>${eur(log.reduce((a,x)=>a+(+x.kosten||0),0))}</span></div>`:''}</div>`:''}
+    <div class="actions" style="margin-top:12px"><button type="button" class="btn primary" id="wdone">Wartung erledigt</button></div></div>`}
+function wartDone(d){dsForm('Wartung erledigt',[{k:'datum',l:'Datum',t:'date',req:true,v:iso(T0)},{k:'kosten',l:'Kosten (€, optional)',v:''},{k:'notiz',l:'Notiz (optional)',v:''}],async(v,fail)=>{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(v.datum))return fail('Bitte ein Datum wählen.');const k=parseFloat(String(v.kosten).replace(',','.'))||0;
+    d.wartLog=(d.wartLog||[]).concat([{datum:v.datum,kosten:k,notiz:String(v.notiz||'').slice(0,200)}]);
+    if(!d.wartung.letzte||v.datum>d.wartung.letzte)d.wartung=Object.assign({},d.wartung,{letzte:v.datum});
+    await save();closeSheet(false);render();setTimeout(()=>openDetail('d',d.id),motion()?320:0);celebrate('Wartung erledigt');
+    toast('Eingetragen. Nächste Wartung: '+fmtD(wartInfo(d).next)+'.')},{ok:'Eintragen',html:'<p class="ds-dlg-intro">Die nächste Wartung rechnet die App ab diesem Datum. Rechnungen kannst du unten als Dokument hinzufügen.</p>'})}
 function weiterOn(c){if(!c.weiter||c.status==='gekuendigt')return false;const i=contractInfo(c);return !i.offen&&c.weiter===iso(i.end)}
 
 /* ---------- Fristen der nächsten Tage (Vorlauf wählbar): Zähler am Icon und Erinnerungen ---------- */
@@ -1420,7 +1454,7 @@ const SCHED=NS+'sched-belegbox';
 function schedItems(){const items=[];
   db.contracts.forEach(k=>{if(k.status==='gekuendigt'||weiterOn(k))return;const i=contractInfo(k);if(i.by&&days(i.by)>=0)items.push({d:iso(i.by),t:'k'});
     const p=priceChange(k);if(p&&days(p.date)>=0)items.push({d:iso(p.date),t:'p'})});
-  db.devices.forEach(d=>{const i=deviceInfo(d);[i.gew,i.gar].forEach(x=>{if(x&&days(x)>=0)items.push({d:iso(x),t:'g'})})});
+  db.devices.forEach(d=>{const i=deviceInfo(d);[i.gew,i.gar].forEach(x=>{if(x&&days(x)>=0)items.push({d:iso(x),t:'g'})});const wi=wartInfo(d);if(wi&&wi.n>=0)items.push({d:iso(wi.next),t:'w'})});
   return items.sort((a,b)=>a.d<b.d?-1:1)}
 /* Klartext für das Menü: wann kommt die nächste Meldung? */
 function remindNext(){const it=schedItems()[0];if(!it)return 'Gerade steht keine Frist an.';

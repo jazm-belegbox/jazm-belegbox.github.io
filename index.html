@@ -299,6 +299,10 @@ body.locked .fan{display:none}
 .rate{background:var(--sunk);border-radius:14px;padding:12px 14px;margin-bottom:16px}
 .rate .rhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
 .rate .rhead span{color:var(--muted);font-size:14px}
+.rate.wart .rhead .pill{font-size:13px}.rate.wart .rhead .p-ok{color:var(--ok)}.rate.wart .rhead .p-warn{color:var(--warn)}.rate.wart .rhead .p-crit{color:var(--crit)}
+.wlog{margin-top:12px;border-top:1px solid var(--line);padding-top:8px;display:grid;gap:4px;font-size:14px}
+.wlog>div{display:flex;justify-content:space-between;gap:10px}.wlog>div span:last-child{color:var(--muted);text-align:right}
+.wlog .wsum{border-top:1px dashed var(--line);padding-top:6px;font-weight:700}.wlog .wsum span:last-child{color:inherit}
 .rate .track{height:10px;background:var(--surface);border-radius:99px;overflow:hidden}
 .rate .fill{height:100%;background:var(--accent);border-radius:99px;transform-origin:left}
 @media (prefers-reduced-motion:no-preference){.rate .fill{animation:grow .9s var(--ease) .15s backwards}}

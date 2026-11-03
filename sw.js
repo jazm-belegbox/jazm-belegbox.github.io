@@ -4,10 +4,10 @@
 // Eigene Namen je Adresse: Live unter / wie bisher, eine Test-App unter /test/ mit Präfix „test-“
 const SCOPE_PATH = new URL(self.registration.scope).pathname;
 const NS = SCOPE_PATH === '/' ? '' : SCOPE_PATH.replace(/^\/|\/$/g, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase() + '-';
-const CACHE = NS + 'belegbox-0.10.3.1';
+const CACHE = NS + 'belegbox-0.11.0.0';
 const INBOX = NS + 'inbox-belegbox', SCHED = NS + 'sched-belegbox';
 const FILES = ['./', 'index.html', 'app.js', 'ds.js', 'boxen/smartbox.png', 'boxen/gesundbox.png', 'boxen/belegbox.png', 'manifest.webmanifest',
-  'icons/belegbox-192.png', 'icons/belegbox-512.png', 'icons/belegbox-maskable-512.png', 'icons/belegbox-maskable-192.png', 'icons/belegbox-180.png', 'icons/belegbox-badge-96.png',
+  'icons/belegbox-192.png', 'icons/belegbox-512.png', 'icons/belegbox-maskable-512.png', 'icons/belegbox-maskable-192.png', 'icons/belegbox-180.png', 'icons/belegbox-badge-v2-96.png',
   'vendor/pdfjs/pdf.min.mjs', 'vendor/pdfjs/pdf.worker.min.mjs'];
 
 self.addEventListener('install', e => {
@@ -69,8 +69,8 @@ self.addEventListener('fetch', e => {
 /* ---------- Erinnerungen ohne Server ---------- */
 self.addEventListener('periodicsync', e => { if (e.tag === 'belegbox-fristen') e.waitUntil(remind(false)); });
 
-const LABEL = { k: 'eine Kündigungsfrist', g: 'eine Garantie', p: 'ein Preis' };
-const VERB = { k: 'endet', g: 'läuft ab', p: 'ändert sich' };
+const LABEL = { k: 'eine Kündigungsfrist', g: 'eine Garantie', p: 'ein Preis', w: 'eine Wartung' };
+const VERB = { k: 'endet', g: 'läuft ab', p: 'ändert sich', w: 'ist fällig' };
 function dayIso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 function diffDays(s, today) { const p = s.split('-').map(Number); return Math.round((new Date(p[0], p[1] - 1, p[2]) - today) / 864e5); }
 const when = n => n === 0 ? 'heute' : n === 1 ? 'morgen' : 'in ' + n + ' Tagen';
@@ -92,7 +92,7 @@ async function remind(force) {
     ? (LABEL[f.t] || 'eine Frist').replace(/^./, m => m.toUpperCase()) + ' ' + (VERB[f.t] || 'endet') + ' ' + when(f.n) + '.'
     : soon.length + ' Fristen in den nächsten ' + lead + ' Tagen – die nächste ' + when(f.n) + '.';
   await self.registration.showNotification('MyBelegBox', {
-    body, tag: 'belegbox-fristen', renotify: true, icon: 'icons/belegbox-192.png', badge: 'icons/belegbox-badge-96.png', data: { url: './' }
+    body, tag: 'belegbox-fristen', renotify: true, icon: 'icons/belegbox-192.png', badge: 'icons/belegbox-badge-v2-96.png', data: { url: './' }
   });
   await c.put('./__last', new Response(JSON.stringify({ key })));
 }
