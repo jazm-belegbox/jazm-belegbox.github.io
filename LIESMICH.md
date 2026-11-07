@@ -1,6 +1,10 @@
-# MyBelegBox – Test-App 0.11.0.0
+# MyBelegBox – Test-App 0.11.0.1
 
 Abos, Verträge, Geräte und Belege an einem Ort. Alle Daten werden mit deinem Passwort verschlüsselt und bleiben auf dem Handy. Es gibt keinen Server. Einzige mögliche Verbindung: die optionale automatische Sicherung in dein eigenes privates GitHub-Repo (nur verschlüsselte Daten).
+
+## Neu in 0.11.0.1
+
+- Intern: Der Betrieb innerhalb von MyBox ist jetzt fest eingebaut und schaltet sich nur dort ein. Als Einzel-App ändert sich nichts.
 
 ## Neu in 0.11
 
